@@ -1,121 +1,121 @@
 Order ID,Date,Product,Category,Region,Sales Rep,Revenue,Cost,Profit,Units,Customer
-1001,2023-01-05,Laptop Pro,Electronics,North,Alice Chen,1299.99,780.00,519.99,1,Acme Corp
-1002,2023-01-07,Office Chair,Furniture,South,Bob Martinez,449.99,225.00,224.99,2,Beta Inc
-1003,2023-01-10,Wireless Mouse,Electronics,East,Carol Smith,49.99,20.00,29.99,5,Gamma LLC
-1004,2023-01-12,Standing Desk,Furniture,West,David Lee,799.99,420.00,379.99,1,Delta Co
-1005,2023-01-15,Noise Headphones,Electronics,North,Alice Chen,299.99,140.00,159.99,3,Acme Corp
-1006,2023-01-18,Ergonomic Keyboard,Electronics,South,Bob Martinez,129.99,55.00,74.99,4,Epsilon Ltd
-1007,2023-01-20,Monitor 27inch,Electronics,East,Carol Smith,549.99,310.00,239.99,2,Zeta Corp
-1008,2023-01-22,Bookshelf,Furniture,West,David Lee,249.99,110.00,139.99,1,Eta Inc
-1009,2023-01-25,Webcam HD,Electronics,North,Alice Chen,89.99,38.00,51.99,6,Theta LLC
-1010,2023-01-28,Desk Lamp,Office Supplies,South,Bob Martinez,39.99,15.00,24.99,8,Iota Co
-1011,2023-02-02,Laptop Pro,Electronics,West,Eve Johnson,1299.99,780.00,519.99,2,Kappa Ltd
-1012,2023-02-05,USB Hub,Electronics,North,Alice Chen,34.99,12.00,22.99,10,Acme Corp
-1013,2023-02-08,Filing Cabinet,Furniture,South,Bob Martinez,329.99,160.00,169.99,1,Beta Inc
-1014,2023-02-10,Tablet 10inch,Electronics,East,Frank Brown,599.99,340.00,259.99,2,Lambda Corp
-1015,2023-02-13,Printer Laser,Electronics,West,David Lee,399.99,220.00,179.99,1,Mu Inc
-1016,2023-02-15,Sticky Notes Pack,Office Supplies,North,Alice Chen,12.99,3.50,9.49,20,Acme Corp
-1017,2023-02-18,Conference Chair,Furniture,South,Bob Martinez,599.99,310.00,289.99,4,Beta Inc
-1018,2023-02-20,Wireless Charger,Electronics,East,Frank Brown,49.99,18.00,31.99,7,Nu LLC
-1019,2023-02-22,Whiteboard 4ft,Office Supplies,West,David Lee,149.99,65.00,84.99,2,Xi Co
-1020,2023-02-25,SSD Drive 1TB,Electronics,North,Alice Chen,109.99,52.00,57.99,5,Omicron Ltd
-1021,2023-03-01,Laptop Pro,Electronics,South,Gina Davis,1299.99,780.00,519.99,1,Pi Corp
-1022,2023-03-04,Smart Speaker,Electronics,East,Frank Brown,199.99,90.00,109.99,3,Rho Inc
-1023,2023-03-07,Lounge Chair,Furniture,West,David Lee,899.99,490.00,409.99,1,Sigma LLC
-1024,2023-03-10,Webcam 4K,Electronics,North,Alice Chen,149.99,65.00,84.99,4,Acme Corp
-1025,2023-03-12,Pen Set Premium,Office Supplies,South,Gina Davis,24.99,8.00,16.99,15,Tau Co
-1026,2023-03-15,Gaming Monitor,Electronics,East,Frank Brown,699.99,410.00,289.99,2,Upsilon Ltd
-1027,2023-03-18,Bookcase Large,Furniture,West,David Lee,549.99,280.00,269.99,1,Phi Corp
-1028,2023-03-20,Cable Management,Office Supplies,North,Alice Chen,19.99,6.00,13.99,12,Acme Corp
-1029,2023-03-22,Tablet Stand,Electronics,South,Gina Davis,39.99,14.00,25.99,8,Chi Inc
-1030,2023-03-25,External Drive,Electronics,East,Frank Brown,79.99,35.00,44.99,6,Psi LLC
-1031,2023-04-02,Laptop Air,Electronics,West,Eve Johnson,999.99,590.00,409.99,2,Omega Co
-1032,2023-04-05,Mechanical Keyboard,Electronics,North,Alice Chen,149.99,72.00,77.99,3,Acme Corp
-1033,2023-04-08,Reception Desk,Furniture,South,Gina Davis,1299.99,720.00,579.99,1,Alpha Inc
-1034,2023-04-10,Microphone USB,Electronics,East,Frank Brown,89.99,38.00,51.99,5,Beta Corp
-1035,2023-04-12,Monitor Stand,Office Supplies,West,David Lee,59.99,22.00,37.99,4,Gamma Ltd
-1036,2023-04-15,Laptop Pro,Electronics,North,Alice Chen,1299.99,780.00,519.99,1,Acme Corp
-1037,2023-04-18,Sofa Office,Furniture,South,Gina Davis,1499.99,830.00,669.99,1,Delta LLC
-1038,2023-04-20,Ring Light,Electronics,East,Frank Brown,69.99,28.00,41.99,6,Epsilon Co
-1039,2023-04-22,Notepad Premium,Office Supplies,West,David Lee,9.99,2.50,7.49,25,Zeta Ltd
-1040,2023-04-25,Router WiFi6,Electronics,North,Alice Chen,179.99,82.00,97.99,4,Eta Corp
-1041,2023-05-02,Smart Display,Electronics,South,Gina Davis,249.99,118.00,131.99,2,Theta Inc
-1042,2023-05-05,Ergonomic Chair,Furniture,East,Frank Brown,749.99,400.00,349.99,2,Iota LLC
-1043,2023-05-08,Projector HD,Electronics,West,Eve Johnson,899.99,510.00,389.99,1,Kappa Co
-1044,2023-05-10,Document Scanner,Electronics,North,Alice Chen,199.99,95.00,104.99,3,Acme Corp
-1045,2023-05-12,Printer Paper Ream,Office Supplies,South,Gina Davis,14.99,4.50,10.49,30,Lambda Inc
-1046,2023-05-15,Laptop Pro,Electronics,East,Frank Brown,1299.99,780.00,519.99,2,Mu Corp
-1047,2023-05-18,Executive Desk,Furniture,West,David Lee,1799.99,990.00,809.99,1,Nu Ltd
-1048,2023-05-20,VR Headset,Electronics,North,Alice Chen,499.99,270.00,229.99,2,Xi LLC
-1049,2023-05-22,Stapler Electric,Office Supplies,South,Gina Davis,29.99,10.00,19.99,10,Omicron Co
-1050,2023-05-25,Graphics Tablet,Electronics,East,Frank Brown,299.99,145.00,154.99,3,Pi Ltd
-1051,2023-06-01,Laptop Pro,Electronics,West,Eve Johnson,1299.99,780.00,519.99,1,Rho Corp
-1052,2023-06-04,Desk Organizer,Office Supplies,North,Alice Chen,34.99,12.00,22.99,8,Acme Corp
-1053,2023-06-07,Workbench,Furniture,South,Gina Davis,499.99,265.00,234.99,1,Sigma Inc
-1054,2023-06-10,Smart Watch,Electronics,East,Frank Brown,349.99,178.00,171.99,4,Tau LLC
-1055,2023-06-12,Laptop Bag,Office Supplies,West,David Lee,59.99,22.00,37.99,6,Upsilon Co
-1056,2023-06-15,NAS Storage,Electronics,North,Alice Chen,399.99,215.00,184.99,2,Acme Corp
-1057,2023-06-18,Corner Desk,Furniture,South,Gina Davis,999.99,545.00,454.99,1,Phi Ltd
-1058,2023-06-20,Webcam HD,Electronics,East,Frank Brown,89.99,38.00,51.99,5,Chi Corp
-1059,2023-06-22,Label Maker,Office Supplies,West,David Lee,44.99,16.00,28.99,7,Psi Inc
-1060,2023-06-25,Laptop Pro,Electronics,North,Alice Chen,1299.99,780.00,519.99,3,Omega LLC
-1061,2023-07-02,Tablet Pro,Electronics,South,Gina Davis,799.99,440.00,359.99,2,Alpha Co
-1062,2023-07-05,Lobby Chair,Furniture,East,Frank Brown,649.99,345.00,304.99,3,Beta Ltd
-1063,2023-07-08,Gaming PC,Electronics,West,Eve Johnson,2499.99,1450.00,1049.99,1,Gamma Corp
-1064,2023-07-10,Toner Cartridge,Office Supplies,North,Alice Chen,79.99,32.00,47.99,5,Acme Corp
-1065,2023-07-12,Laptop Air,Electronics,South,Gina Davis,999.99,590.00,409.99,2,Delta Inc
-1066,2023-07-15,Filing System,Furniture,East,Frank Brown,299.99,145.00,154.99,1,Epsilon LLC
-1067,2023-07-18,Drone Camera,Electronics,West,Eve Johnson,799.99,430.00,369.99,1,Zeta Co
-1068,2023-07-20,Index Cards Pack,Office Supplies,North,Alice Chen,7.99,2.00,5.99,20,Acme Corp
-1069,2023-07-22,Smart Thermostat,Electronics,South,Gina Davis,199.99,95.00,104.99,3,Eta Ltd
-1070,2023-07-25,Laptop Pro,Electronics,East,Frank Brown,1299.99,780.00,519.99,2,Theta Corp
-1071,2023-08-01,Ultrawide Monitor,Electronics,West,Eve Johnson,999.99,570.00,429.99,1,Iota Inc
-1072,2023-08-04,Storage Ottoman,Furniture,North,Alice Chen,199.99,90.00,109.99,2,Acme Corp
-1073,2023-08-07,Action Camera,Electronics,South,Gina Davis,399.99,205.00,194.99,2,Kappa LLC
-1074,2023-08-10,Cable Tidy Box,Office Supplies,East,Frank Brown,24.99,8.00,16.99,10,Lambda Co
-1075,2023-08-12,Laptop Pro,Electronics,West,Eve Johnson,1299.99,780.00,519.99,1,Mu Ltd
-1076,2023-08-15,Smart Bulbs Pack,Electronics,North,Alice Chen,49.99,18.00,31.99,8,Acme Corp
-1077,2023-08-18,Conference Table,Furniture,South,Gina Davis,2499.99,1350.00,1149.99,1,Nu Corp
-1078,2023-08-20,Portable SSD,Electronics,East,Frank Brown,129.99,58.00,71.99,5,Xi Inc
-1079,2023-08-22,Binder 3-Ring,Office Supplies,West,David Lee,12.99,3.50,9.49,15,Omicron LLC
-1080,2023-08-25,Power Bank 20k,Electronics,North,Alice Chen,59.99,24.00,35.99,7,Acme Corp
-1081,2023-09-01,Laptop Pro,Electronics,South,Gina Davis,1299.99,780.00,519.99,2,Pi Co
-1082,2023-09-04,TV Stand,Furniture,East,Frank Brown,399.99,205.00,194.99,1,Rho Ltd
-1083,2023-09-07,Noise Headphones,Electronics,West,Eve Johnson,299.99,140.00,159.99,3,Sigma Corp
-1084,2023-09-10,Highlighter Set,Office Supplies,North,Alice Chen,14.99,4.50,10.49,12,Acme Corp
-1085,2023-09-12,Streaming Deck,Electronics,South,Gina Davis,149.99,68.00,81.99,4,Tau Inc
-1086,2023-09-15,Bookcase Small,Furniture,East,Frank Brown,299.99,145.00,154.99,2,Upsilon LLC
-1087,2023-09-18,Laptop Pro,Electronics,West,Eve Johnson,1299.99,780.00,519.99,1,Phi Co
-1088,2023-09-20,Phone Stand,Office Supplies,North,Alice Chen,19.99,6.00,13.99,15,Acme Corp
-1089,2023-09-22,Security Camera,Electronics,South,Gina Davis,179.99,82.00,97.99,3,Chi Ltd
-1090,2023-09-25,Desk Fan,Office Supplies,East,Frank Brown,39.99,15.00,24.99,6,Psi Corp
-1091,2023-10-02,Laptop Air,Electronics,West,Eve Johnson,999.99,590.00,409.99,2,Omega Inc
-1092,2023-10-05,Modular Sofa,Furniture,North,Alice Chen,2999.99,1640.00,1359.99,1,Alpha LLC
-1093,2023-10-08,Smart Lock,Electronics,South,Gina Davis,229.99,108.00,121.99,2,Beta Co
-1094,2023-10-10,Scissors Premium,Office Supplies,East,Frank Brown,19.99,6.00,13.99,10,Gamma Ltd
-1095,2023-10-12,Laptop Pro,Electronics,West,Eve Johnson,1299.99,780.00,519.99,2,Delta Corp
-1096,2023-10-15,Wardrobe Cabinet,Furniture,North,Alice Chen,899.99,490.00,409.99,1,Acme Corp
-1097,2023-10-18,Drone Racing,Electronics,South,Gina Davis,599.99,320.00,279.99,1,Epsilon Inc
-1098,2023-10-20,Tape Dispenser,Office Supplies,East,Frank Brown,14.99,4.50,10.49,8,Zeta LLC
-1099,2023-10-22,Smart Doorbell,Electronics,West,Eve Johnson,199.99,92.00,107.99,3,Eta Co
-1100,2023-10-25,Laptop Pro,Electronics,North,Alice Chen,1299.99,780.00,519.99,2,Acme Corp
-1101,2023-11-01,Tablet Mini,Electronics,South,Gina Davis,449.99,228.00,221.99,3,Theta Ltd
-1102,2023-11-04,Executive Chair,Furniture,East,Frank Brown,1199.99,655.00,544.99,2,Iota Corp
-1103,2023-11-07,Laptop Pro,Electronics,West,Eve Johnson,1299.99,780.00,519.99,3,Kappa Inc
-1104,2023-11-10,Paper Shredder,Electronics,North,Alice Chen,149.99,68.00,81.99,2,Acme Corp
-1105,2023-11-12,Pen Holder Set,Office Supplies,South,Gina Davis,22.99,7.00,15.99,10,Lambda LLC
-1106,2023-11-15,Laptop Air,Electronics,East,Frank Brown,999.99,590.00,409.99,1,Mu Co
-1107,2023-11-18,TV Cabinet,Furniture,West,Eve Johnson,649.99,345.00,304.99,1,Nu Ltd
-1108,2023-11-20,Soundbar,Electronics,North,Alice Chen,299.99,148.00,151.99,2,Acme Corp
-1109,2023-11-22,Folder Pack,Office Supplies,South,Gina Davis,9.99,2.50,7.49,20,Xi Corp
-1110,2023-11-25,Laptop Pro,Electronics,East,Frank Brown,1299.99,780.00,519.99,4,Omicron Inc
-1111,2023-12-01,Gaming Laptop,Electronics,West,Eve Johnson,1999.99,1150.00,849.99,1,Pi LLC
-1112,2023-12-04,Dining Chair,Furniture,North,Alice Chen,349.99,175.00,174.99,4,Acme Corp
-1113,2023-12-07,Smart TV 55inch,Electronics,South,Gina Davis,899.99,490.00,409.99,1,Rho Co
-1114,2023-12-10,Planner 2024,Office Supplies,East,Frank Brown,29.99,10.00,19.99,12,Sigma Ltd
-1115,2023-12-12,Laptop Pro,Electronics,West,Eve Johnson,1299.99,780.00,519.99,2,Tau Corp
-1116,2023-12-15,Bookshelf Tower,Furniture,North,Alice Chen,449.99,230.00,219.99,1,Acme Corp
-1117,2023-12-18,Portable Monitor,Electronics,South,Gina Davis,279.99,135.00,144.99,3,Upsilon Inc
-1118,2023-12-20,Whiteboard Marker,Office Supplies,East,Frank Brown,12.99,3.50,9.49,15,Phi LLC
-1119,2023-12-22,Laptop Pro,Electronics,West,Eve Johnson,1299.99,780.00,519.99,1,Chi Co
-1120,2023-12-28,Smart Display Hub,Electronics,North,Alice Chen,399.99,205.00,194.99,2,Acme Corp
+ORD-001,2023-01-05,Laptop Pro 15,Electronics,North,Alice Johnson,1850.00,1050.00,800.00,1,TechCorp Inc
+ORD-002,2023-01-07,Ergonomic Chair,Furniture,South,Bob Smith,420.00,210.00,210.00,2,Office Plus
+ORD-003,2023-01-10,Wireless Mouse,Electronics,East,Carol White,85.00,38.00,47.00,3,DataSystems
+ORD-004,2023-01-12,Standing Desk,Furniture,West,David Lee,680.00,390.00,290.00,1,StartUp Hub
+ORD-005,2023-01-15,Notebook A4,Office Supplies,North,Alice Johnson,24.00,9.00,15.00,10,TechCorp Inc
+ORD-006,2023-01-18,Laptop Air 13,Electronics,South,Bob Smith,1420.00,820.00,600.00,1,MediaGroup
+ORD-007,2023-01-20,Monitor 27inch,Electronics,East,Carol White,560.00,310.00,250.00,1,DataSystems
+ORD-008,2023-01-22,Office Chair,Furniture,West,David Lee,310.00,155.00,155.00,2,RetailChain
+ORD-009,2023-01-25,Printer Ink,Office Supplies,North,Eve Martinez,45.00,18.00,27.00,5,SchoolBoard
+ORD-010,2023-01-28,Mechanical Keyboard,Electronics,South,Frank Brown,145.00,68.00,77.00,2,DevAgency
+ORD-011,2023-02-02,Laptop Pro 15,Electronics,West,Grace Kim,1850.00,1050.00,800.00,1,BigBank
+ORD-012,2023-02-04,Bookshelf,Furniture,North,Alice Johnson,290.00,140.00,150.00,1,LibraryNet
+ORD-013,2023-02-07,USB-C Hub,Electronics,East,Carol White,78.00,32.00,46.00,4,DataSystems
+ORD-014,2023-02-10,Whiteboard,Office Supplies,South,Bob Smith,110.00,52.00,58.00,2,EduCenter
+ORD-015,2023-02-12,Laptop Air 13,Electronics,North,Alice Johnson,1420.00,820.00,600.00,1,TechCorp Inc
+ORD-016,2023-02-14,Coffee Table,Furniture,West,David Lee,390.00,195.00,195.00,1,HomeDecor
+ORD-017,2023-02-17,Stapler Set,Office Supplies,East,Carol White,28.00,11.00,17.00,6,AdminPlus
+ORD-018,2023-02-20,Gaming Headset,Electronics,South,Bob Smith,195.00,95.00,100.00,2,GameZone
+ORD-019,2023-02-22,Filing Cabinet,Furniture,North,Eve Martinez,260.00,130.00,130.00,1,LegalFirm
+ORD-020,2023-02-25,Webcam HD,Electronics,West,Frank Brown,110.00,52.00,58.00,3,RemoteWorks
+ORD-021,2023-03-01,Laptop Pro 15,Electronics,East,Carol White,1850.00,1050.00,800.00,1,FinanceCo
+ORD-022,2023-03-03,Desk Lamp,Furniture,South,Bob Smith,75.00,32.00,43.00,3,StudyHub
+ORD-023,2023-03-06,A4 Paper Ream,Office Supplies,North,Alice Johnson,18.00,7.00,11.00,20,TechCorp Inc
+ORD-024,2023-03-09,Monitor 27inch,Electronics,West,David Lee,560.00,310.00,250.00,2,BigBank
+ORD-025,2023-03-12,Conference Table,Furniture,East,Carol White,1200.00,700.00,500.00,1,CorpHQ
+ORD-026,2023-03-15,Laptop Air 13,Electronics,South,Bob Smith,1420.00,820.00,600.00,1,MediaGroup
+ORD-027,2023-03-18,Pen Set,Office Supplies,North,Eve Martinez,22.00,8.00,14.00,15,SchoolBoard
+ORD-028,2023-03-20,Laptop Pro 15,Electronics,West,Grace Kim,1850.00,1050.00,800.00,2,DevAgency
+ORD-029,2023-03-23,Sofa Set,Furniture,South,Bob Smith,2200.00,1300.00,900.00,1,HotelChain
+ORD-030,2023-03-26,Wireless Charger,Electronics,East,Carol White,65.00,28.00,37.00,5,DataSystems
+ORD-031,2023-04-01,Laptop Air 13,Electronics,North,Alice Johnson,1420.00,820.00,600.00,1,TechCorp Inc
+ORD-032,2023-04-03,Bookcase,Furniture,West,David Lee,450.00,225.00,225.00,1,LibraryNet
+ORD-033,2023-04-06,Sticky Notes,Office Supplies,South,Bob Smith,12.00,4.00,8.00,25,EduCenter
+ORD-034,2023-04-09,Monitor 24inch,Electronics,East,Carol White,420.00,240.00,180.00,1,FinanceCo
+ORD-035,2023-04-12,Ergonomic Chair,Furniture,North,Eve Martinez,420.00,210.00,210.00,2,LegalFirm
+ORD-036,2023-04-15,Laptop Pro 15,Electronics,South,Frank Brown,1850.00,1050.00,800.00,1,StartUp Hub
+ORD-037,2023-04-18,Standing Desk,Furniture,West,Grace Kim,680.00,390.00,290.00,1,RetailChain
+ORD-038,2023-04-20,Printer Paper,Office Supplies,North,Alice Johnson,35.00,14.00,21.00,10,TechCorp Inc
+ORD-039,2023-04-23,Bluetooth Speaker,Electronics,East,Carol White,160.00,75.00,85.00,3,MediaGroup
+ORD-040,2023-04-26,Office Sofa,Furniture,South,Bob Smith,890.00,490.00,400.00,1,CorpHQ
+ORD-041,2023-05-02,Laptop Air 13,Electronics,West,David Lee,1420.00,820.00,600.00,1,BigBank
+ORD-042,2023-05-04,Desk Organizer,Office Supplies,North,Alice Johnson,42.00,17.00,25.00,4,AdminPlus
+ORD-043,2023-05-07,Monitor 27inch,Electronics,South,Bob Smith,560.00,310.00,250.00,1,DevAgency
+ORD-044,2023-05-10,Reception Desk,Furniture,East,Carol White,1450.00,850.00,600.00,1,HotelChain
+ORD-045,2023-05-13,Laptop Pro 15,Electronics,North,Eve Martinez,1850.00,1050.00,800.00,1,TechCorp Inc
+ORD-046,2023-05-16,Whiteboard Markers,Office Supplies,West,Frank Brown,18.00,6.00,12.00,20,EduCenter
+ORD-047,2023-05-19,Mechanical Keyboard,Electronics,South,Bob Smith,145.00,68.00,77.00,3,GameZone
+ORD-048,2023-05-22,Lounge Chair,Furniture,East,Carol White,580.00,310.00,270.00,2,HotelChain
+ORD-049,2023-05-25,USB Flash Drive,Electronics,North,Alice Johnson,28.00,11.00,17.00,10,TechCorp Inc
+ORD-050,2023-05-28,Meeting Table,Furniture,West,David Lee,980.00,560.00,420.00,1,CorpHQ
+ORD-051,2023-06-01,Laptop Pro 15,Electronics,South,Frank Brown,1850.00,1050.00,800.00,1,FinanceCo
+ORD-052,2023-06-04,Binder Set,Office Supplies,North,Eve Martinez,32.00,12.00,20.00,8,LegalFirm
+ORD-053,2023-06-07,Webcam 4K,Electronics,East,Carol White,180.00,88.00,92.00,2,RemoteWorks
+ORD-054,2023-06-10,Laptop Air 13,Electronics,West,Grace Kim,1420.00,820.00,600.00,1,StartUp Hub
+ORD-055,2023-06-13,Bookshelf,Furniture,South,Bob Smith,290.00,140.00,150.00,2,LibraryNet
+ORD-056,2023-06-16,Toner Cartridge,Office Supplies,North,Alice Johnson,68.00,28.00,40.00,3,TechCorp Inc
+ORD-057,2023-06-19,Monitor 27inch,Electronics,East,Carol White,560.00,310.00,250.00,1,DataSystems
+ORD-058,2023-06-22,Ergonomic Chair,Furniture,West,David Lee,420.00,210.00,210.00,3,BigBank
+ORD-059,2023-06-25,Laptop Pro 15,Electronics,North,Alice Johnson,1850.00,1050.00,800.00,1,TechCorp Inc
+ORD-060,2023-06-28,Conference Chair,Furniture,South,Bob Smith,280.00,140.00,140.00,4,CorpHQ
+ORD-061,2023-07-01,Laptop Air 13,Electronics,East,Carol White,1420.00,820.00,600.00,1,MediaGroup
+ORD-062,2023-07-04,Notepad Pack,Office Supplies,North,Eve Martinez,22.00,8.00,14.00,12,SchoolBoard
+ORD-063,2023-07-07,External SSD,Electronics,West,Frank Brown,220.00,108.00,112.00,2,DataSystems
+ORD-064,2023-07-10,Standing Desk,Furniture,South,Bob Smith,680.00,390.00,290.00,1,StartUp Hub
+ORD-065,2023-07-13,Laptop Pro 15,Electronics,North,Grace Kim,1850.00,1050.00,800.00,2,TechCorp Inc
+ORD-066,2023-07-16,Desk Tray,Office Supplies,East,Carol White,24.00,9.00,15.00,5,AdminPlus
+ORD-067,2023-07-19,Monitor 32inch,Electronics,West,David Lee,780.00,440.00,340.00,1,FinanceCo
+ORD-068,2023-07-22,Office Sofa,Furniture,South,Bob Smith,890.00,490.00,400.00,1,HotelChain
+ORD-069,2023-07-25,Wireless Mouse,Electronics,North,Alice Johnson,85.00,38.00,47.00,6,TechCorp Inc
+ORD-070,2023-07-28,Filing Cabinet,Furniture,East,Carol White,260.00,130.00,130.00,2,LegalFirm
+ORD-071,2023-08-01,Laptop Pro 15,Electronics,West,Frank Brown,1850.00,1050.00,800.00,1,BigBank
+ORD-072,2023-08-04,Paper Clips Box,Office Supplies,North,Eve Martinez,8.00,3.00,5.00,30,TechCorp Inc
+ORD-073,2023-08-07,Laptop Air 13,Electronics,South,Bob Smith,1420.00,820.00,600.00,2,DevAgency
+ORD-074,2023-08-10,Modular Sofa,Furniture,East,Carol White,2800.00,1600.00,1200.00,1,HotelChain
+ORD-075,2023-08-13,USB-C Hub,Electronics,North,Alice Johnson,78.00,32.00,46.00,5,TechCorp Inc
+ORD-076,2023-08-16,Whiteboard,Office Supplies,West,David Lee,110.00,52.00,58.00,1,EduCenter
+ORD-077,2023-08-19,Monitor 27inch,Electronics,South,Grace Kim,560.00,310.00,250.00,2,MediaGroup
+ORD-078,2023-08-22,Reception Chair,Furniture,East,Carol White,390.00,195.00,195.00,4,HotelChain
+ORD-079,2023-08-25,Laptop Pro 15,Electronics,North,Alice Johnson,1850.00,1050.00,800.00,1,FinanceCo
+ORD-080,2023-08-28,Stationery Set,Office Supplies,West,Frank Brown,55.00,20.00,35.00,3,LegalFirm
+ORD-081,2023-09-01,Laptop Air 13,Electronics,South,Bob Smith,1420.00,820.00,600.00,1,StartUp Hub
+ORD-082,2023-09-04,Bookcase,Furniture,North,Eve Martinez,450.00,225.00,225.00,2,LibraryNet
+ORD-083,2023-09-07,Gaming Headset,Electronics,East,Carol White,195.00,95.00,100.00,3,GameZone
+ORD-084,2023-09-10,Meeting Table,Furniture,West,David Lee,980.00,560.00,420.00,1,CorpHQ
+ORD-085,2023-09-13,Laptop Pro 15,Electronics,South,Frank Brown,1850.00,1050.00,800.00,2,BigBank
+ORD-086,2023-09-16,Highlighters Set,Office Supplies,North,Alice Johnson,15.00,5.00,10.00,15,SchoolBoard
+ORD-087,2023-09-19,Bluetooth Speaker,Electronics,East,Carol White,160.00,75.00,85.00,4,MediaGroup
+ORD-088,2023-09-22,Standing Desk,Furniture,West,Grace Kim,680.00,390.00,290.00,2,RemoteWorks
+ORD-089,2023-09-25,Monitor 24inch,Electronics,North,Alice Johnson,420.00,240.00,180.00,1,TechCorp Inc
+ORD-090,2023-09-28,Conference Table,Furniture,South,Bob Smith,1200.00,700.00,500.00,1,CorpHQ
+ORD-091,2023-10-01,Laptop Air 13,Electronics,East,Carol White,1420.00,820.00,600.00,2,DataSystems
+ORD-092,2023-10-04,A4 Paper Ream,Office Supplies,North,Eve Martinez,18.00,7.00,11.00,30,TechCorp Inc
+ORD-093,2023-10-07,Laptop Pro 15,Electronics,West,Frank Brown,1850.00,1050.00,800.00,1,FinanceCo
+ORD-094,2023-10-10,Ergonomic Chair,Furniture,South,Bob Smith,420.00,210.00,210.00,4,HotelChain
+ORD-095,2023-10-13,External SSD,Electronics,North,Grace Kim,220.00,108.00,112.00,3,DevAgency
+ORD-096,2023-10-16,Desk Lamp,Furniture,East,Carol White,75.00,32.00,43.00,5,StudyHub
+ORD-097,2023-10-19,Wireless Charger,Electronics,West,David Lee,65.00,28.00,37.00,8,RemoteWorks
+ORD-098,2023-10-22,Sofa Set,Furniture,South,Bob Smith,2200.00,1300.00,900.00,1,HotelChain
+ORD-099,2023-10-25,Laptop Pro 15,Electronics,North,Alice Johnson,1850.00,1050.00,800.00,3,TechCorp Inc
+ORD-100,2023-10-28,Pen Set,Office Supplies,East,Carol White,22.00,8.00,14.00,20,EduCenter
+ORD-101,2023-11-01,Laptop Air 13,Electronics,West,Frank Brown,1420.00,820.00,600.00,2,BigBank
+ORD-102,2023-11-04,Standing Desk,Furniture,North,Eve Martinez,680.00,390.00,290.00,2,StartUp Hub
+ORD-103,2023-11-07,Monitor 27inch,Electronics,South,Bob Smith,560.00,310.00,250.00,3,MediaGroup
+ORD-104,2023-11-10,Bookshelf,Furniture,East,Carol White,290.00,140.00,150.00,3,LibraryNet
+ORD-105,2023-11-13,Laptop Pro 15,Electronics,West,Grace Kim,1850.00,1050.00,800.00,2,FinanceCo
+ORD-106,2023-11-16,Toner Cartridge,Office Supplies,North,Alice Johnson,68.00,28.00,40.00,4,TechCorp Inc
+ORD-107,2023-11-19,Laptop Air 13,Electronics,South,Frank Brown,1420.00,820.00,600.00,3,DevAgency
+ORD-108,2023-11-22,Conference Chair,Furniture,East,Carol White,280.00,140.00,140.00,6,CorpHQ
+ORD-109,2023-11-25,Laptop Pro 15,Electronics,North,Alice Johnson,1850.00,1050.00,800.00,2,TechCorp Inc
+ORD-110,2023-11-28,Mechanical Keyboard,Electronics,West,David Lee,145.00,68.00,77.00,5,GameZone
+ORD-111,2023-12-01,Laptop Air 13,Electronics,South,Bob Smith,1420.00,820.00,600.00,2,StartUp Hub
+ORD-112,2023-12-04,Modular Sofa,Furniture,North,Eve Martinez,2800.00,1600.00,1200.00,1,HotelChain
+ORD-113,2023-12-07,Webcam HD,Electronics,East,Carol White,110.00,52.00,58.00,4,RemoteWorks
+ORD-114,2023-12-10,Meeting Table,Furniture,West,Grace Kim,980.00,560.00,420.00,1,CorpHQ
+ORD-115,2023-12-13,Laptop Pro 15,Electronics,South,Frank Brown,1850.00,1050.00,800.00,3,BigBank
+ORD-116,2023-12-16,Stationery Set,Office Supplies,North,Alice Johnson,55.00,20.00,35.00,5,SchoolBoard
+ORD-117,2023-12-19,Monitor 32inch,Electronics,East,Carol White,780.00,440.00,340.00,2,FinanceCo
+ORD-118,2023-12-22,Ergonomic Chair,Furniture,West,David Lee,420.00,210.00,210.00,3,BigBank
+ORD-119,2023-12-26,Laptop Air 13,Electronics,North,Alice Johnson,1420.00,820.00,600.00,1,TechCorp Inc
+ORD-120,2023-12-29,Lounge Chair,Furniture,South,Bob Smith,580.00,310.00,270.00,2,HotelChain
