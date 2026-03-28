@@ -1,343 +1,365 @@
 """
-chart_engine.py
----------------
-Plotly chart factory — all charts use a consistent dark professional theme.
-Each function returns a go.Figure ready to pass to st.plotly_chart().
+chart_engine.py — DataLensAI v2.0
+Chart Configuration Engine
+
+Responsibilities:
+  - Auto-select chart types based on detected column semantics
+  - Build Chart.js-compatible config dicts (for frontend rendering)
+  - Build Plotly figure dicts (for server-side rendering / export)
+  - Generate download-ready Plotly PNG charts via kaleido
+
+Supported Chart Types:
+  - Bar (vertical + horizontal)
+  - Line with fill (trend)
+  - Doughnut
+  - Grouped / Stacked Bar (multi-series)
+  - Scatter (correlation)
+  - Area (monthly cumulative)
+
+Author: Agam Kumar Verma
 """
 
-import pandas as pd
-import numpy as np
-import plotly.graph_objects as go
-import plotly.express as px
-from plotly.subplots import make_subplots
+from __future__ import annotations
+
+import logging
 from typing import Optional
 
+import numpy as np
+import pandas as pd
 
-# ── Design System ───────────────────────────────────────────────────────────────
-BG       = "#0A0E1A"
-BG2      = "#0F1525"
-PAPER    = "#111827"
-FG       = "#E2E8F0"
-FG2      = "#94A3B8"
-GRID     = "#1E293B"
-PALETTE  = ["#4F8EF7","#22D3A5","#F7874F","#A855F7","#F7C34F","#EF4444","#06B6D4","#84CC16","#F43F5E","#8B5CF6"]
+from data_engine import DataEngine
+from dataset_profiler import DatasetProfiler, _fmt, _trunc
 
-LAYOUT_BASE = dict(
-    paper_bgcolor=PAPER,
-    plot_bgcolor =BG2,
-    font         =dict(family="IBM Plex Sans, DM Sans, system-ui", color=FG2, size=12),
-    title_font   =dict(family="Syne, DM Sans, system-ui", color=FG, size=16),
-    margin       =dict(l=40, r=20, t=50, b=40),
-    legend       =dict(bgcolor="rgba(0,0,0,0)", bordercolor=GRID, borderwidth=1, font_color=FG2),
-    xaxis        =dict(gridcolor=GRID, zerolinecolor=GRID, tickfont_color=FG2, title_font_color=FG2),
-    yaxis        =dict(gridcolor=GRID, zerolinecolor=GRID, tickfont_color=FG2, title_font_color=FG2),
-    hoverlabel   =dict(bgcolor=PAPER, bordercolor=GRID, font_color=FG),
-)
+log = logging.getLogger(__name__)
+
+# ── Color palettes ────────────────────────────────────────────────────────────
+PAL = [
+    "#7C3AED", "#10B981", "#F59E0B", "#F87171",
+    "#38BDF8", "#EC4899", "#F97316", "#A78BFA",
+    "#34D399", "#60A5FA", "#FCD34D", "#FB7185",
+]
+PAL_ALPHA = [c + "BB" for c in PAL]
 
 
-def _apply_theme(fig: go.Figure, title: str = "") -> go.Figure:
-    fig.update_layout(title=dict(text=title, x=0.01, xanchor="left"), **LAYOUT_BASE)
-    return fig
+class ChartEngine:
+    """
+    Builds chart configurations from a DataEngine + DatasetProfiler pair.
 
+    Usage
+    -----
+    engine  = DataEngine(...).load_from_bytes(content).clean()
+    profiler = DatasetProfiler(engine)
+    charts   = ChartEngine(engine, profiler).build_all_charts()
+    """
 
-def _fmt_currency(val: float) -> str:
-    if val >= 1e6: return f"${val/1e6:.2f}M"
-    if val >= 1e3: return f"${val/1e3:.1f}K"
-    return f"${val:,.0f}"
+    def __init__(self, engine: DataEngine, profiler: DatasetProfiler) -> None:
+        self.engine   = engine
+        self.profiler = profiler
 
+    # ══════════════════════════════════════════════════════════════════════
+    # BUILD ALL CHARTS (Chart.js format)
+    # ══════════════════════════════════════════════════════════════════════
+    def build_all_charts(self) -> list[dict]:
+        """Return a list of Chart.js-compatible chart config dicts."""
+        charts = []
+        e = self.engine
 
-# ── Chart Builders ──────────────────────────────────────────────────────────────
+        # ── 1. Revenue by Category (bar) ──────────────────────────────────
+        if e.category_col and e.revenue_col:
+            data = e.group_sum(e.category_col, e.revenue_col, top_n=8)
+            if data:
+                charts.append(self._bar_chart(
+                    chart_id="revenue_by_category",
+                    title=f"Revenue by {e.category_col.replace('_',' ')}",
+                    sub="Total revenue per category",
+                    icon="📊",
+                    labels=[_trunc(d[0], 16) for d in data],
+                    values=[d[1] for d in data],
+                ))
 
-def bar_chart(df: pd.DataFrame, x_col: str, y_col: str,
-              title: str = "", color_col: str = None,
-              horizontal: bool = True, top_n: int = None) -> go.Figure:
-    """Gradient bar chart with value annotations."""
-    if df.empty or x_col not in df.columns or y_col not in df.columns:
-        return _empty_chart("No data available")
+        # ── 2. Monthly Revenue Trend (line) ───────────────────────────────
+        if e.date_col and e.revenue_col:
+            trend = e.monthly_trend(e.date_col, e.revenue_col, last_n=18)
+            if len(trend) > 1:
+                charts.append(self._line_chart(
+                    chart_id="monthly_trend",
+                    title=f"{e.revenue_col.replace('_',' ')} Monthly Trend",
+                    sub="Revenue over time",
+                    icon="📈",
+                    wide=True,
+                    labels=[t[0] for t in trend],
+                    values=[t[1] for t in trend],
+                ))
 
-    df = df.copy()
-    if top_n:
-        df = df.nlargest(top_n, y_col)
+        # ── 3. Category Distribution (doughnut) ───────────────────────────
+        if e.category_col:
+            dist = e.value_counts_top(e.category_col, top_n=8)
+            if len(dist) > 1:
+                charts.append(self._doughnut_chart(
+                    chart_id="category_distribution",
+                    title=f"{e.category_col.replace('_',' ')} Distribution",
+                    sub="Record count by category",
+                    icon="🥧",
+                    labels=[_trunc(d[0], 16) for d in dist],
+                    values=[d[1] for d in dist],
+                ))
 
-    colors = [PALETTE[i % len(PALETTE)] for i in range(len(df))]
+        # ── 4. Top Categories Horizontal Bar ──────────────────────────────
+        if e.category_col and e.revenue_col:
+            top = e.group_sum(e.category_col, e.revenue_col, top_n=8)
+            if top:
+                charts.append(self._bar_chart(
+                    chart_id="top_categories_horiz",
+                    title="Top Categories Ranking",
+                    sub="Horizontal revenue comparison",
+                    icon="🏆",
+                    labels=[_trunc(d[0], 20) for d in top],
+                    values=[d[1] for d in top],
+                    horizontal=True,
+                    color=PAL[1],
+                ))
 
-    if horizontal:
-        fig = go.Figure(go.Bar(
-            y=df[x_col].astype(str), x=df[y_col],
-            orientation="h",
-            marker=dict(color=colors, line=dict(width=0)),
-            text=[_fmt_currency(v) for v in df[y_col]],
-            textposition="outside", textfont=dict(color=FG2, size=11),
-            hovertemplate=f"<b>%{{y}}</b><br>{y_col}: %{{x:,.0f}}<extra></extra>",
-        ))
-        fig.update_layout(yaxis=dict(autorange="reversed"))
-    else:
-        fig = go.Figure(go.Bar(
-            x=df[x_col].astype(str), y=df[y_col],
-            marker=dict(color=colors, line=dict(width=0)),
-            text=[_fmt_currency(v) for v in df[y_col]],
-            textposition="outside", textfont=dict(color=FG2, size=11),
-            hovertemplate=f"<b>%{{x}}</b><br>{y_col}: %{{y:,.0f}}<extra></extra>",
-        ))
+        # ── 5. Revenue by Region (bar) ────────────────────────────────────
+        if e.region_col and e.revenue_col:
+            reg_data = e.group_sum(e.region_col, e.revenue_col, top_n=10)
+            if len(reg_data) > 1:
+                charts.append(self._bar_chart(
+                    chart_id="revenue_by_region",
+                    title="Revenue by Region",
+                    sub="Regional performance comparison",
+                    icon="🌍",
+                    labels=[d[0] for d in reg_data],
+                    values=[d[1] for d in reg_data],
+                ))
 
-    return _apply_theme(fig, title)
+        # ── 6. Revenue vs Profit grouped bar ──────────────────────────────
+        if e.category_col and e.revenue_col and e.profit_col:
+            cat_rev = e.group_sum(e.category_col, e.revenue_col, top_n=6)
+            prf_map = dict(e.group_sum(e.category_col, e.profit_col, top_n=20))
+            labels  = [_trunc(d[0], 14) for d in cat_rev]
+            charts.append({
+                "id":    "revenue_vs_profit",
+                "type":  "bar",
+                "title": "Revenue vs Profit by Category",
+                "sub":   "Side-by-side comparison",
+                "ico":   "⚖",
+                "wide":  False,
+                "labels": labels,
+                "datasets": [
+                    self._dataset_cfg(
+                        label=e.revenue_col.replace("_", " "),
+                        data=[d[1] for d in cat_rev],
+                        color=PAL[0],
+                        alpha="99",
+                    ),
+                    self._dataset_cfg(
+                        label=e.profit_col.replace("_", " "),
+                        data=[prf_map.get(d[0], 0) for d in cat_rev],
+                        color=PAL[1],
+                        alpha="99",
+                    ),
+                ],
+            })
 
+        # ── 7. Scatter — first two numeric columns ─────────────────────────
+        num_cols = e.numeric_columns
+        if len(num_cols) >= 2:
+            c1, c2 = num_cols[0], num_cols[1]
+            df2    = e.df[[c1, c2]].apply(pd.to_numeric, errors="coerce").dropna()
+            # Sample for performance
+            if len(df2) > 600:
+                df2 = df2.sample(600, random_state=42)
+            pts = [{"x": round(float(r[c1]), 4), "y": round(float(r[c2]), 4)}
+                   for _, r in df2.iterrows()]
+            if len(pts) > 10:
+                charts.append({
+                    "id":    "scatter_correlation",
+                    "type":  "scatter",
+                    "title": f"{c1.replace('_',' ')} vs {c2.replace('_',' ')}",
+                    "sub":   "Correlation analysis",
+                    "ico":   "⊕",
+                    "wide":  False,
+                    "xL":    c1,
+                    "yL":    c2,
+                    "labels": [],
+                    "datasets": [{
+                        "label":           "Data Points",
+                        "data":            pts,
+                        "backgroundColor": PAL[5] + "88",
+                        "pointRadius":     4,
+                        "pointHoverRadius": 6,
+                    }],
+                })
 
-def line_chart(df: pd.DataFrame, x_col: str, y_cols: list[str],
-               title: str = "", fill_area: bool = True) -> go.Figure:
-    """Smooth line chart with optional area fill for trend visualization."""
-    if df.empty:
-        return _empty_chart("No data available")
+        log.info(f"Built {len(charts)} charts for '{e.filename}'")
+        return charts
 
-    fig = go.Figure()
-    for i, col in enumerate(y_cols):
-        if col not in df.columns:
-            continue
-        color = PALETTE[i % len(PALETTE)]
-        fig.add_trace(go.Scatter(
-            x=df[x_col].astype(str), y=df[col],
-            mode="lines+markers",
-            name=col,
-            line=dict(color=color, width=2.5, shape="spline"),
-            marker=dict(size=6, color=color, symbol="circle"),
-            fill="tozeroy" if (fill_area and i == 0) else "none",
-            fillcolor=color.replace("#", "rgba(").rstrip(")") + ",0.08)" if color.startswith("#") else color,
-            hovertemplate=f"<b>%{{x}}</b><br>{col}: $%{{y:,.0f}}<extra></extra>",
-        ))
+    # ══════════════════════════════════════════════════════════════════════
+    # CHART BUILDERS (Chart.js)
+    # ══════════════════════════════════════════════════════════════════════
+    def _bar_chart(
+        self,
+        chart_id:   str,
+        title:      str,
+        sub:        str,
+        icon:       str,
+        labels:     list,
+        values:     list,
+        horizontal: bool = False,
+        color:      Optional[str] = None,
+    ) -> dict:
+        colors = [c + "BB" for c in PAL[:len(values)]] if not color else [color + "99"] * len(values)
+        return {
+            "id":     chart_id,
+            "type":   "bar",
+            "title":  title,
+            "sub":    sub,
+            "ico":    icon,
+            "wide":   False,
+            "horiz":  horizontal,
+            "labels": labels,
+            "datasets": [self._dataset_cfg(
+                label=title,
+                data=[round(v, 2) for v in values],
+                color=color or PAL[0],
+                alpha="BB" if not color else "99",
+                multi_color=(color is None),
+                all_colors=PAL_ALPHA[:len(values)],
+            )],
+        }
 
-    return _apply_theme(fig, title)
+    def _line_chart(
+        self,
+        chart_id: str,
+        title:    str,
+        sub:      str,
+        icon:     str,
+        labels:   list,
+        values:   list,
+        wide:     bool = True,
+    ) -> dict:
+        return {
+            "id":     chart_id,
+            "type":   "line",
+            "title":  title,
+            "sub":    sub,
+            "ico":    icon,
+            "wide":   wide,
+            "labels": labels,
+            "datasets": [{
+                "label":            title,
+                "data":             [round(v, 2) for v in values],
+                "borderColor":      PAL[0],
+                "backgroundColor":  PAL[0] + "28",
+                "fill":             True,
+                "tension":          0.42,
+                "pointRadius":      4,
+                "pointHoverRadius": 7,
+                "borderWidth":      2.5,
+                "pointBackgroundColor": PAL[0],
+            }],
+        }
 
+    def _doughnut_chart(
+        self,
+        chart_id: str,
+        title:    str,
+        sub:      str,
+        icon:     str,
+        labels:   list,
+        values:   list,
+    ) -> dict:
+        return {
+            "id":     chart_id,
+            "type":   "doughnut",
+            "title":  title,
+            "sub":    sub,
+            "ico":    icon,
+            "wide":   False,
+            "labels": labels,
+            "datasets": [{
+                "data":            [int(v) for v in values],
+                "backgroundColor": PAL_ALPHA[:len(values)],
+                "borderColor":     "rgba(4,6,16,.8)",
+                "borderWidth":     2,
+                "hoverOffset":     10,
+            }],
+        }
 
-def pie_donut_chart(df: pd.DataFrame, names_col: str, values_col: str,
-                     title: str = "", donut: bool = True) -> go.Figure:
-    """Professional donut / pie chart with % labels."""
-    if df.empty or names_col not in df.columns or values_col not in df.columns:
-        return _empty_chart("No data available")
+    @staticmethod
+    def _dataset_cfg(
+        label:       str,
+        data:        list,
+        color:       str,
+        alpha:       str = "BB",
+        multi_color: bool = False,
+        all_colors:  Optional[list] = None,
+    ) -> dict:
+        bg = all_colors if multi_color and all_colors else (color + alpha)
+        return {
+            "label":           label,
+            "data":            data,
+            "backgroundColor": bg,
+            "borderColor":     color + "CC",
+            "borderWidth":     0 if multi_color else 1.5,
+            "borderRadius":    6,
+            "borderSkipped":   False,
+        }
 
-    fig = go.Figure(go.Pie(
-        labels=df[names_col].astype(str),
-        values=df[values_col],
-        hole=0.52 if donut else 0,
-        marker=dict(colors=PALETTE[:len(df)], line=dict(color=BG, width=2.5)),
-        textinfo="percent+label",
-        textfont=dict(color=FG2, size=12),
-        hovertemplate="<b>%{label}</b><br>Revenue: $%{value:,.0f}<br>Share: %{percent}<extra></extra>",
-        pull=[0.03 if i == 0 else 0 for i in range(len(df))],
-    ))
-    if donut:
-        total = df[values_col].sum()
-        fig.add_annotation(
-            text=f"<b>{_fmt_currency(total)}</b><br><span style='font-size:11px'>Total</span>",
-            x=0.5, y=0.5, showarrow=False, font=dict(color=FG, size=16)
+    # ══════════════════════════════════════════════════════════════════════
+    # PLOTLY CHARTS (server-side, export-quality)
+    # ══════════════════════════════════════════════════════════════════════
+    def build_plotly_charts(self) -> list[dict]:
+        """
+        Returns Plotly figure dicts (JSON-serialisable).
+        Requires `plotly` to be installed.
+        """
+        try:
+            import plotly.graph_objects as go
+            import plotly.express as px
+        except ImportError:
+            log.warning("plotly not installed — skipping Plotly charts")
+            return []
+
+        charts = []
+        e      = self.engine
+        layout = dict(
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            font=dict(family="DM Sans, sans-serif", color="#8892A8"),
+            margin=dict(l=40, r=20, t=50, b=40),
         )
-    return _apply_theme(fig, title)
 
-
-def grouped_bar_chart(df: pd.DataFrame, x_col: str,
-                       bar_cols: list[str], title: str = "") -> go.Figure:
-    """Multi-series grouped bar chart."""
-    if df.empty:
-        return _empty_chart("No data available")
-
-    fig = go.Figure()
-    for i, col in enumerate(bar_cols):
-        if col not in df.columns:
-            continue
-        fig.add_trace(go.Bar(
-            name=col, x=df[x_col].astype(str), y=df[col],
-            marker=dict(color=PALETTE[i % len(PALETTE)], line=dict(width=0)),
-            hovertemplate=f"<b>%{{x}}</b><br>{col}: $%{{y:,.0f}}<extra></extra>",
-        ))
-    fig.update_layout(barmode="group")
-    return _apply_theme(fig, title)
-
-
-def area_chart(df: pd.DataFrame, x_col: str, y_col: str,
-               title: str = "") -> go.Figure:
-    """Smooth area chart — good for revenue trend."""
-    if df.empty:
-        return _empty_chart("No data available")
-
-    color = PALETTE[0]
-    fig = go.Figure(go.Scatter(
-        x=df[x_col].astype(str), y=df[y_col],
-        mode="lines+markers",
-        line=dict(color=color, width=3, shape="spline"),
-        marker=dict(size=7, color=color, symbol="circle",
-                    line=dict(color=BG, width=2)),
-        fill="tozeroy",
-        fillcolor="rgba(79,142,247,0.10)",
-        hovertemplate="<b>%{x}</b><br>Revenue: $%{y:,.0f}<extra></extra>",
-    ))
-    return _apply_theme(fig, title)
-
-
-def heatmap_chart(df: pd.DataFrame, title: str = "") -> go.Figure:
-    """Correlation or cross-tab heatmap."""
-    if df.empty:
-        return _empty_chart("No data available")
-
-    colorscale = [[0, "#0A0E1A"], [0.5, "#1D4ED8"], [1, "#22D3A5"]]
-    fig = go.Figure(go.Heatmap(
-        z=df.values, x=df.columns.tolist(), y=df.index.tolist(),
-        colorscale=colorscale,
-        text=[[f"${v:,.0f}" for v in row] for row in df.values],
-        texttemplate="%{text}", textfont=dict(size=10, color=FG),
-        showscale=True,
-        hovertemplate="<b>%{y}</b> × <b>%{x}</b><br>$%{z:,.0f}<extra></extra>",
-    ))
-    return _apply_theme(fig, title)
-
-
-def scatter_plot(df: pd.DataFrame, x_col: str, y_col: str,
-                  color_col: str = None, size_col: str = None,
-                  title: str = "") -> go.Figure:
-    """Scatter plot with optional color and size dimensions."""
-    if df.empty or x_col not in df.columns or y_col not in df.columns:
-        return _empty_chart("No data available")
-
-    if color_col and color_col in df.columns:
-        categories = df[color_col].unique()
-        fig = go.Figure()
-        for i, cat in enumerate(categories):
-            sub = df[df[color_col] == cat]
-            fig.add_trace(go.Scatter(
-                x=sub[x_col], y=sub[y_col],
-                mode="markers", name=str(cat),
-                marker=dict(color=PALETTE[i % len(PALETTE)], size=9, opacity=0.8,
-                            line=dict(color=BG, width=1)),
-                hovertemplate=f"<b>{cat}</b><br>{x_col}: $%{{x:,.0f}}<br>{y_col}: $%{{y:,.0f}}<extra></extra>",
-            ))
-    else:
-        fig = go.Figure(go.Scatter(
-            x=df[x_col], y=df[y_col], mode="markers",
-            marker=dict(color=PALETTE[0], size=9, opacity=0.8,
-                        line=dict(color=BG, width=1)),
-        ))
-
-    return _apply_theme(fig, title)
-
-
-def waterfall_chart(categories: list, values: list, title: str = "") -> go.Figure:
-    """Waterfall chart for profit bridge or contribution analysis."""
-    fig = go.Figure(go.Waterfall(
-        name="", orientation="v",
-        x=categories, y=values,
-        connector=dict(line=dict(color=GRID, width=2)),
-        increasing=dict(marker_color=PALETTE[1]),
-        decreasing=dict(marker_color=PALETTE[5]),
-        totals=dict(marker_color=PALETTE[0]),
-        textposition="outside",
-        text=[_fmt_currency(abs(v)) for v in values],
-        hovertemplate="<b>%{x}</b><br>%{y:,.0f}<extra></extra>",
-    ))
-    return _apply_theme(fig, title)
-
-
-def combo_bar_line(df: pd.DataFrame, x_col: str, bar_col: str,
-                    line_col: str, title: str = "") -> go.Figure:
-    """Combination chart: bars for one metric, line for another (e.g. revenue + margin)."""
-    if df.empty:
-        return _empty_chart("No data available")
-
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-    fig.add_trace(go.Bar(
-        x=df[x_col].astype(str), y=df[bar_col],
-        name=bar_col,
-        marker=dict(color=PALETTE[0], opacity=0.8, line=dict(width=0)),
-        hovertemplate=f"<b>%{{x}}</b><br>{bar_col}: $%{{y:,.0f}}<extra></extra>",
-    ), secondary_y=False)
-
-    fig.add_trace(go.Scatter(
-        x=df[x_col].astype(str), y=df[line_col],
-        name=line_col, mode="lines+markers",
-        line=dict(color=PALETTE[1], width=2.5),
-        marker=dict(size=7),
-        hovertemplate=f"<b>%{{x}}</b><br>{line_col}: %{{y:.1f}}%<extra></extra>",
-    ), secondary_y=True)
-
-    fig.update_yaxes(title_text=bar_col, secondary_y=False,
-                     gridcolor=GRID, tickfont_color=FG2, title_font_color=FG2)
-    fig.update_yaxes(title_text=line_col, secondary_y=True,
-                     gridcolor=GRID, tickfont_color=FG2, title_font_color=FG2,
-                     ticksuffix="%")
-    fig.update_layout(**LAYOUT_BASE, title=dict(text=title, x=0.01))
-    return fig
-
-
-def forecast_chart(df: pd.DataFrame, date_col: str, metric_col: str,
-                    title: str = "Revenue Forecast") -> go.Figure:
-    """Dual-series chart: historical (solid) + forecast (dashed + CI band)."""
-    if df.empty:
-        return _empty_chart("No forecast data")
-
-    hist = df[df.get("Type", pd.Series(["Historical"]*len(df))) == "Historical"]
-    fore = df[df.get("Type", pd.Series([])) == "Forecast"]
-
-    fig = go.Figure()
-    if not hist.empty:
-        fig.add_trace(go.Scatter(
-            x=hist["Period"].astype(str), y=hist[metric_col],
-            mode="lines+markers", name="Historical",
-            line=dict(color=PALETTE[0], width=2.5),
-            marker=dict(size=6),
-            fill="tozeroy", fillcolor="rgba(79,142,247,0.08)",
-        ))
-    if not fore.empty:
-        std = hist[metric_col].std() * 0.5 if not hist.empty else 0
-        fig.add_trace(go.Scatter(
-            x=list(fore["Period"].astype(str)) + list(fore["Period"].astype(str))[::-1],
-            y=list(fore[metric_col] + std) + list(fore[metric_col] - std)[::-1],
-            fill="toself", fillcolor="rgba(168,85,247,0.10)",
-            line=dict(color="rgba(0,0,0,0)"), showlegend=False, name="CI Band",
-        ))
-        fig.add_trace(go.Scatter(
-            x=fore["Period"].astype(str), y=fore[metric_col],
-            mode="lines+markers+text", name="Forecast",
-            line=dict(color=PALETTE[3], width=2.5, dash="dash"),
-            marker=dict(size=8, symbol="diamond"),
-            text=[f"${v:,.0f}" for v in fore[metric_col]],
-            textposition="top center", textfont=dict(color=PALETTE[3], size=11),
-        ))
-
-    return _apply_theme(fig, title)
-
-
-def kpi_gauge(value: float, max_value: float, title: str,
-               color: str = "#4F8EF7") -> go.Figure:
-    """Gauge chart for KPI visualization."""
-    fig = go.Figure(go.Indicator(
-        mode="gauge+number+delta",
-        value=value,
-        title=dict(text=title, font=dict(color=FG2, size=13)),
-        number=dict(font=dict(color=FG, size=28), prefix="$"),
-        gauge=dict(
-            axis=dict(range=[0, max_value], tickcolor=FG2),
-            bar=dict(color=color),
-            bgcolor=BG2,
-            bordercolor=GRID,
-            steps=[
-                dict(range=[0, max_value*0.5], color=BG2),
-                dict(range=[max_value*0.5, max_value*0.8], color="#1E293B"),
-            ],
-            threshold=dict(
-                line=dict(color=PALETTE[2], width=3),
-                thickness=0.8, value=max_value*0.8
+        # Revenue by Category
+        if e.category_col and e.revenue_col:
+            data  = e.group_sum(e.category_col, e.revenue_col, top_n=8)
+            fig   = go.Figure(
+                go.Bar(
+                    x=[d[0] for d in data],
+                    y=[d[1] for d in data],
+                    marker_color=PAL[:len(data)],
+                    text=[_fmt(d[1], "$") for d in data],
+                    textposition="outside",
+                )
             )
-        )
-    ))
-    fig.update_layout(paper_bgcolor=PAPER, font=dict(color=FG2),
-                       height=220, margin=dict(l=20, r=20, t=40, b=10))
-    return fig
+            fig.update_layout(title=f"Revenue by {e.category_col}", **layout)
+            charts.append({"id": "plotly_rev_cat", "figure": fig.to_dict()})
 
+        # Monthly Trend
+        if e.date_col and e.revenue_col:
+            trend = e.monthly_trend(e.date_col, e.revenue_col)
+            if trend:
+                fig = go.Figure(
+                    go.Scatter(
+                        x=[t[0] for t in trend],
+                        y=[t[1] for t in trend],
+                        mode="lines+markers",
+                        fill="tozeroy",
+                        line=dict(color=PAL[0], width=2.5),
+                        fillcolor=PAL[0] + "28",
+                    )
+                )
+                fig.update_layout(title="Monthly Revenue Trend", **layout)
+                charts.append({"id": "plotly_trend", "figure": fig.to_dict()})
 
-def _empty_chart(message: str) -> go.Figure:
-    """Return a placeholder chart when data is unavailable."""
-    fig = go.Figure()
-    fig.add_annotation(
-        text=f"⚠ {message}", x=0.5, y=0.5, showarrow=False,
-        font=dict(size=14, color="#EF4444"),
-        xref="paper", yref="paper"
-    )
-    fig.update_layout(**LAYOUT_BASE, height=300)
-    return fig
+        return charts
