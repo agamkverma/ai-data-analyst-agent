@@ -1,0 +1,31 @@
+# DataLensAI v2.0 — Python Dependencies
+# Install with: pip install -r requirements.txt
+
+# ── Web Framework ─────────────────────────────────────────────────────────────
+fastapi==0.111.0
+uvicorn[standard]==0.29.0
+python-multipart==0.0.9      # for file upload form parsing
+
+# ── Data Processing ───────────────────────────────────────────────────────────
+pandas==2.2.2
+numpy==1.26.4
+scipy==1.13.0
+
+# ── Machine Learning ─────────────────────────────────────────────────────────
+scikit-learn==1.4.2
+
+# ── HTTP Client (async AI calls) ─────────────────────────────────────────────
+httpx==0.27.0
+
+# ── Charts (server-side, optional) ───────────────────────────────────────────
+plotly==5.22.0
+kaleido==0.2.1               # for Plotly PNG export
+
+# ── Environment ──────────────────────────────────────────────────────────────
+python-dotenv==1.0.1
+
+# ── Type hints ────────────────────────────────────────────────────────────────
+pydantic==2.7.1
+
+# ── Optional: Excel support ──────────────────────────────────────────────────
+# openpyxl==3.1.2            # uncomment for .xlsx upload support
