@@ -1,263 +1,401 @@
 """
-insight_generator.py
---------------------
-Generates human-readable business insights from dataset analysis.
-Supports: OpenAI GPT-4o, Google Gemini 1.5 Pro, and rule-based fallback (no API key needed).
+insight_generator.py — DataLensAI v2.0
+AI Insight Generation Engine
+
+Responsibilities:
+  - Rule-based insight generation from statistical heuristics
+  - AI-powered insights via OpenAI GPT-4o-mini or Google Gemini
+  - Structured output: summary, insights list, recommendations
+  - Fallback chain: AI → rule-based → generic
+
+Insight Types:
+  positive  — strong performance, growth signals
+  negative  — underperformance, declining metrics
+  warning   — concentration risk, data quality issues
+  neutral   — informational / contextual observations
+  info      — dataset structure, column metadata
+
+Author: Agam Kumar Verma
 """
 
-import re
+from __future__ import annotations
+
 import json
-import pandas as pd
-import numpy as np
+import logging
+import re
 from typing import Optional
 
+import httpx
+import numpy as np
 
-# ── LLM Callers ─────────────────────────────────────────────────────────────────
+from data_engine import DataEngine
+from dataset_profiler import DatasetProfiler, _fmt, _trunc
 
-def _call_openai(prompt: str, api_key: str) -> str:
-    import openai
-    client = openai.OpenAI(api_key=api_key)
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are an expert business analyst and data scientist. "
-                    "Generate concise, actionable business insights from the data provided. "
-                    "Write in clear professional English. "
-                    "Format as numbered bullet points. Be specific with numbers and percentages."
-                )
-            },
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.4,
-        max_tokens=600,
-    )
-    return response.choices[0].message.content.strip()
+log = logging.getLogger(__name__)
+
+# ── AI prompt template ────────────────────────────────────────────────────────
+_SYSTEM_PROMPT = """\
+You are a senior Business Intelligence analyst. Your job is to analyze dataset statistics \
+and generate actionable, specific, data-backed business insights. Always reference real numbers \
+from the data. Be concise, direct, and strategic.
+"""
+
+_USER_PROMPT_TEMPLATE = """\
+Analyze the following dataset summary and provide structured business insights.
+
+{summary}
+
+{custom_question}
+
+Respond ONLY with valid JSON (no markdown fences, no extra text):
+{{
+  "summary": "3-5 sentences highlighting the most important findings. \
+Use <strong> tags around key numbers, percentages, and entity names.",
+  "insights": [
+    {{
+      "title": "Short, specific title",
+      "description": "1-2 sentences with specific numbers from the data.",
+      "type": "positive|negative|warning|neutral|info"
+    }}
+  ],
+  "recommendations": [
+    "Specific, actionable recommendation 1",
+    "Specific, actionable recommendation 2",
+    "Specific, actionable recommendation 3",
+    "Specific, actionable recommendation 4",
+    "Specific, actionable recommendation 5"
+  ]
+}}
+
+Provide 7-9 insights covering revenue, profit, regions, categories, trends, data quality, \
+and growth opportunities. All numbers must come from the dataset summary above.
+"""
 
 
-def _call_gemini(prompt: str, api_key: str) -> str:
-    import google.generativeai as genai
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel(
-        model_name="gemini-1.5-pro",
-        system_instruction=(
-            "You are an expert business analyst. Generate concise, actionable insights. "
-            "Use numbered bullet points and include specific numbers."
-        )
-    )
-    response = model.generate_content(prompt)
-    return response.text.strip()
+class InsightGenerator:
+    """
+    Generates AI or rule-based business insights from a DataEngine session.
 
+    Parameters
+    ----------
+    engine   : DataEngine
+    profiler : DatasetProfiler
+    """
 
-# ── Rule-Based Insight Engine ───────────────────────────────────────────────────
+    def __init__(self, engine: DataEngine, profiler: DatasetProfiler) -> None:
+        self.engine   = engine
+        self.profiler = profiler
 
-def _rule_based_insights(df: pd.DataFrame, col_map: dict, kpis: dict) -> str:
-    """Generate professional business insights without an API key."""
-    insights = []
+    # ══════════════════════════════════════════════════════════════════════
+    # RULE-BASED INSIGHTS
+    # ══════════════════════════════════════════════════════════════════════
+    def rule_based_insights(self, custom_question: Optional[str] = None) -> dict:
+        """
+        Generate statistical heuristic-based insights.
+        No API key required — runs entirely from pandas aggregations.
+        """
+        e       = self.engine
+        df      = e.df
+        rev_col = e.revenue_col
+        prf_col = e.profit_col
+        cat_col = e.category_col
+        reg_col = e.region_col
+        qs      = self.profiler.quality_score()
 
-    rc  = col_map.get("revenue");   pc  = col_map.get("profit")
-    cc  = col_map.get("category");  rgc = col_map.get("region")
-    prc = col_map.get("product");   dc  = col_map.get("date")
-    qc  = col_map.get("quantity")
+        # ── Aggregate data ────────────────────────────────────────────────
+        rev_sum  = float(self.profiler.get_numeric_series_stats(rev_col).get("sum", 0)) if rev_col else 0
+        prf_sum  = float(self.profiler.get_numeric_series_stats(prf_col).get("sum", 0)) if prf_col else 0
+        margin   = round(prf_sum / rev_sum * 100, 1) if rev_sum and prf_sum else None
 
-    # Revenue & Profit overview
-    if kpis.get("total_revenue") and kpis.get("total_profit"):
-        rev  = kpis["total_revenue"]
-        prof = kpis["total_profit"]
-        margin = kpis.get("profit_margin_pct", 0)
-        perf = "strong" if margin > 35 else "healthy" if margin > 20 else "below-average"
-        insights.append(
-            f"1. **Revenue Overview**: Total revenue of ${rev:,.0f} with a profit of ${prof:,.0f} "
-            f"(margin: {margin:.1f}%). This is a {perf} profit margin "
-            f"{'above the industry average of ~28%.' if margin > 28 else 'with room for improvement.'}"
-        )
+        region_data = e.group_sum(reg_col, rev_col, top_n=20) if reg_col and rev_col else []
+        cat_data    = e.group_sum(cat_col, rev_col, top_n=20) if cat_col and rev_col else []
 
-    # Category breakdown
-    if cc and rc and cc in df.columns and rc in df.columns:
-        cat_perf = df.groupby(cc)[rc].sum().sort_values(ascending=False)
-        top_cat  = cat_perf.index[0]
-        top_share = cat_perf.iloc[0] / cat_perf.sum() * 100
-        insights.append(
-            f"2. **Category Performance**: **{top_cat}** is the top revenue driver, "
-            f"contributing **{top_share:.1f}%** of total revenue (${cat_perf.iloc[0]:,.0f}). "
-            f"{cat_perf.index[-1]} is the weakest category at "
-            f"{cat_perf.iloc[-1]/cat_perf.sum()*100:.1f}% share."
-        )
+        top_reg  = region_data[0][0] if region_data else "—"
+        bot_reg  = region_data[-1][0] if region_data else "—"
+        top_cat  = cat_data[0][0] if cat_data else "—"
 
-    # Regional analysis
-    if rgc and rc and rgc in df.columns and rc in df.columns:
-        reg_perf   = df.groupby(rgc)[rc].sum().sort_values(ascending=False)
-        best_reg   = reg_perf.index[0]
-        worst_reg  = reg_perf.index[-1]
-        best_share = reg_perf.iloc[0] / reg_perf.sum() * 100
-        gap        = reg_perf.iloc[0] - reg_perf.iloc[-1]
-        insights.append(
-            f"3. **Regional Insights**: **{best_reg}** leads all regions with "
-            f"${reg_perf.iloc[0]:,.0f} ({best_share:.1f}% share). "
-            f"**{worst_reg}** underperforms with only ${reg_perf.iloc[-1]:,.0f}. "
-            f"A ${gap:,.0f} gap between best and worst region represents a key growth opportunity."
-        )
+        top_reg_val = region_data[0][1] if region_data else 0
+        bot_reg_val = region_data[-1][1] if region_data else 0
+        top_cat_val = cat_data[0][1] if cat_data else 0
 
-    # Profit margin by category
-    if cc and rc and pc and all(c in df.columns for c in [cc, rc, pc]):
-        margins = (df.groupby(cc)[pc].sum() / df.groupby(cc)[rc].sum() * 100).sort_values(ascending=False)
-        best_m  = margins.index[0]
-        worst_m = margins.index[-1]
-        insights.append(
-            f"4. **Margin Analysis**: **{best_m}** has the highest profit margin at "
-            f"**{margins.iloc[0]:.1f}%**, making it the most profitable category per dollar of revenue. "
-            f"**{worst_m}** has the lowest margin at {margins.iloc[-1]:.1f}%, "
-            f"suggesting higher costs or lower pricing power."
-        )
+        top_reg_pct = round(top_reg_val / rev_sum * 100, 1) if rev_sum else 0
+        top_cat_pct = round(top_cat_val / rev_sum * 100, 1) if rev_sum else 0
+        bot_reg_pct = round(bot_reg_val / rev_sum * 100, 1) if rev_sum else 0
 
-    # Top product
-    if prc and rc and prc in df.columns and rc in df.columns:
-        prod_perf  = df.groupby(prc)[rc].sum().sort_values(ascending=False)
-        top_prod   = prod_perf.index[0]
-        top_prod_r = prod_perf.iloc[0]
-        n_prods    = len(prod_perf)
-        top5_share = prod_perf.head(5).sum() / prod_perf.sum() * 100
-        insights.append(
-            f"5. **Product Insights**: **{top_prod}** is the bestseller with ${top_prod_r:,.0f} in revenue. "
-            f"The top 5 products account for **{top5_share:.1f}%** of total revenue out of {n_prods} products total, "
-            f"indicating a highly concentrated product portfolio."
+        top2_pct = (
+            round((cat_data[0][1] + cat_data[1][1]) / rev_sum * 100, 1)
+            if len(cat_data) >= 2 and rev_sum else 0
         )
 
-    # Time trend
-    if dc and rc and dc in df.columns and rc in df.columns:
-        try:
-            tmp = df.copy()
-            if not pd.api.types.is_datetime64_any_dtype(tmp[dc]):
-                tmp[dc] = pd.to_datetime(tmp[dc], errors="coerce")
-            monthly = tmp.dropna(subset=[dc]).set_index(dc)[rc].resample("ME").sum()
-            if len(monthly) >= 2:
-                first_half = monthly.iloc[:len(monthly)//2].sum()
-                second_half = monthly.iloc[len(monthly)//2:].sum()
-                growth = (second_half - first_half) / first_half * 100 if first_half else 0
-                peak_month = monthly.idxmax().strftime("%B %Y")
-                trend_dir = "upward ↑" if growth > 5 else "declining ↓" if growth < -5 else "stable →"
-                insights.append(
-                    f"6. **Revenue Trend**: Business shows a **{trend_dir}** trajectory. "
-                    f"Second-half revenue {'exceeded' if growth > 0 else 'fell below'} first-half by "
-                    f"**{abs(growth):.1f}%**. Peak month was **{peak_month}** "
-                    f"(${monthly.max():,.0f})."
-                )
-        except Exception:
-            pass
+        growth_gap = round((rev_sum / max(len(region_data), 1)) - bot_reg_val, 2) if region_data else 0
 
-    # Average order value
-    if kpis.get("avg_order_value"):
-        aov = kpis["avg_order_value"]
-        insights.append(
-            f"7. **Order Value**: Average order value is **${aov:,.0f}**. "
-            f"{'Focused on high-value transactions.' if aov > 500 else 'Mix of small and large orders.'} "
-            f"Upselling strategies could significantly impact total revenue."
+        # ── Summary ────────────────────────────────────────────────────────
+        summary_parts = []
+        if rev_sum:
+            summary_parts.append(
+                f"Total revenue stands at <strong>{_fmt(rev_sum, '$')}</strong>."
+            )
+        if top_reg != "—":
+            summary_parts.append(
+                f"<strong>{top_reg} region</strong> leads with <strong>{top_reg_pct}%</strong> of revenue."
+            )
+        if top_cat != "—":
+            summary_parts.append(
+                f"<strong>{top_cat}</strong> is the top-performing category at <strong>{top_cat_pct}%</strong>."
+            )
+        if margin is not None:
+            benchmark = "above" if margin >= 20 else "below"
+            summary_parts.append(
+                f"Profit margin is <strong>{margin}%</strong> — {benchmark} the 20% industry benchmark."
+            )
+        summary_parts.append(
+            f"Dataset quality score: <strong>{qs['score']}%</strong> ({qs['nulls']} nulls, {qs['duplicates']} duplicates)."
         )
+        summary = " ".join(summary_parts)
 
-    # Growth opportunity
-    if rgc and rc and rgc in df.columns and rc in df.columns:
-        reg_perf = df.groupby(rgc)[rc].sum().sort_values(ascending=True)
-        low_reg  = reg_perf.index[0]
-        potential = reg_perf.mean() - reg_perf.iloc[0]
-        if potential > 0:
-            insights.append(
-                f"8. **Growth Opportunity**: If **{low_reg}** reaches the average regional performance, "
-                f"revenue could increase by **${potential:,.0f}** (~{potential/kpis.get('total_revenue',1)*100:.1f}% total growth). "
-                f"Focus on targeted marketing or distribution improvements in this region."
+        # ── Insights ───────────────────────────────────────────────────────
+        insights = []
+
+        if top_reg != "—":
+            insights.append({
+                "title":       f"Revenue Leader: {top_reg}",
+                "description": f"{top_reg} generates {_fmt(top_reg_val, '$')} ({top_reg_pct}% of total). This region is the primary revenue driver and should receive continued investment.",
+                "type":        "positive",
+            })
+
+        if top_cat != "—":
+            second_cat = cat_data[1][0] if len(cat_data) > 1 else "—"
+            second_pct = round(cat_data[1][1] / rev_sum * 100, 1) if len(cat_data) > 1 and rev_sum else 0
+            insights.append({
+                "title":       f"Top Category: {top_cat}",
+                "description": f"{top_cat} accounts for {top_cat_pct}% of revenue ({_fmt(top_cat_val, '$')}). Second place: {second_cat} at {second_pct}%.",
+                "type":        "positive",
+            })
+
+        if top2_pct > 0:
+            risk = top2_pct > 65
+            insights.append({
+                "title":       "Revenue Concentration",
+                "description": f"Top 2 categories account for {top2_pct}% of total revenue. " +
+                               ("High concentration — diversification is recommended to reduce risk." if risk
+                                else "Healthy distribution across the portfolio."),
+                "type":        "warning" if risk else "neutral",
+            })
+
+        if bot_reg != "—" and bot_reg != top_reg:
+            insights.append({
+                "title":       f"Underperforming Region: {bot_reg}",
+                "description": f"{bot_reg} contributes only {bot_reg_pct}% of revenue ({_fmt(bot_reg_val, '$')}). Performance gap vs top region: {_fmt(top_reg_val - bot_reg_val, '$')}.",
+                "type":        "negative",
+            })
+
+        if margin is not None:
+            insights.append({
+                "title":       "Profit Margin Analysis",
+                "description": f"{margin}% margin ({_fmt(prf_sum, '$')} profit on {_fmt(rev_sum, '$')} revenue). " +
+                               ("Above 20% benchmark — efficient operations." if margin >= 20
+                                else "Below 20% benchmark — review pricing and cost structure."),
+                "type":        "positive" if margin >= 20 else "warning",
+            })
+        else:
+            insights.append({
+                "title":       "Profit Tracking",
+                "description": "No profit column detected. Add a 'Profit' or 'Net Income' column for margin and profitability analysis.",
+                "type":        "info",
+            })
+
+        insights.append({
+            "title":       "Data Quality Assessment",
+            "description": f"{e.row_count:,} records across {len(e.columns)} columns. {qs['nulls']} missing values, {qs['duplicates']} duplicates. Overall quality: {qs['score']}% ({qs['grade']}).",
+            "type":        "info" if qs["score"] >= 80 else "warning",
+        })
+
+        if len(region_data) > 1:
+            insights.append({
+                "title":       "Regional Growth Opportunity",
+                "description": f"If {bot_reg} reaches the portfolio average, estimated revenue uplift: {_fmt(max(0, growth_gap), '$')}. Focus marketing and distribution resources there.",
+                "type":        "neutral",
+            })
+
+        if rev_col:
+            rev_stats = self.profiler.get_numeric_series_stats(rev_col)
+            skew      = rev_stats.get("skewness", 0)
+            if abs(skew) > 1.0:
+                insights.append({
+                    "title":       "Revenue Distribution Skew",
+                    "description": f"Revenue distribution is {'right' if skew > 0 else 'left'}-skewed (skewness={skew:.2f}). " +
+                                   ("A few large transactions dominate — investigate Pareto effect." if skew > 1.0
+                                    else "Most revenue clusters at higher values — a healthy sign."),
+                    "type":        "neutral",
+                })
+
+        # ── Recommendations ────────────────────────────────────────────────
+        recommendations = [
+            f"Scale investment in {top_reg} region ({top_reg_pct}% revenue share) — expand marketing, distribution, and sales resources.",
+        ]
+        if bot_reg != "—" and bot_reg != top_reg:
+            recommendations.append(
+                f"Launch a targeted turnaround program in {bot_reg} to close the {_fmt(top_reg_val - bot_reg_val, '$')} performance gap."
+            )
+        recommendations.append(
+            f"Grow {top_cat} category through cross-selling, bundling, and upsell campaigns to maintain market leadership."
+        )
+        if margin is not None and margin < 20:
+            recommendations.append(
+                f"Address the {margin}% profit margin by auditing supply chain costs and repricing low-margin products."
+            )
+        else:
+            recommendations.append(
+                "Introduce loyalty programs and subscription models to increase customer lifetime value and predictable recurring revenue."
+            )
+        if top2_pct > 65:
+            recommendations.append(
+                f"Reduce category concentration risk (top 2 = {top2_pct}%) by investing in campaigns for the bottom 3 categories."
+            )
+        else:
+            recommendations.append(
+                "Continue diversified category strategy — maintain balanced portfolio investment across all segments."
             )
 
-    return "\n\n".join(insights) if insights else "Load a dataset to generate insights."
+        return {
+            "summary":         summary,
+            "insights":        insights[:9],
+            "recommendations": recommendations[:5],
+            "source":          "Rule-Based Intelligence Engine",
+            "model":           None,
+        }
 
+    # ══════════════════════════════════════════════════════════════════════
+    # AI-POWERED INSIGHTS
+    # ══════════════════════════════════════════════════════════════════════
+    async def ai_insights(
+        self,
+        api_key:         str,
+        provider:        str = "gemini",
+        custom_question: Optional[str] = None,
+    ) -> dict:
+        """
+        Generate AI insights using OpenAI or Gemini.
+        Falls back to rule-based on any error.
 
-# ── Main Entry Point ────────────────────────────────────────────────────────────
+        Parameters
+        ----------
+        api_key         : str   API key for the chosen provider
+        provider        : str   "gemini" | "openai"
+        custom_question : str   Optional user-provided follow-up question
+        """
+        summary = self._build_summary()
+        cq_text = f"\nUser question: {custom_question}" if custom_question else ""
+        prompt  = _USER_PROMPT_TEMPLATE.format(summary=summary, custom_question=cq_text)
 
-def generate_insights(df: pd.DataFrame, col_map: dict, kpis: dict,
-                       context: str = "",
-                       api_key: str = "", provider: str = "demo") -> str:
-    """
-    Generate business insights.
-    Tries LLM first (if api_key provided), falls back to rule-based.
-    """
-    if api_key and provider != "demo":
-        prompt = f"""Analyze this business dataset and generate 6–8 concise business insights.
-
-Dataset context:
-{context}
-
-KPI Summary:
-- Total Revenue: ${kpis.get('total_revenue', 0):,.0f}
-- Total Profit: ${kpis.get('total_profit', 0):,.0f}
-- Profit Margin: {kpis.get('profit_margin_pct', 0):.1f}%
-- Best Region: {kpis.get('best_region', 'N/A')}
-- Best Category: {kpis.get('best_category', 'N/A')}
-- Best Product: {kpis.get('best_product', 'N/A')}
-
-Format as numbered bullet points (1. 2. 3. ...).
-Include specific numbers. Make insights actionable for business decisions.
-Bold key findings using **text**."""
+        raw = ""
         try:
-            if provider == "openai":
-                return _call_openai(prompt, api_key)
-            elif provider == "gemini":
-                return _call_gemini(prompt, api_key)
+            if provider == "gemini":
+                raw = await self._call_gemini(api_key, prompt)
+            else:
+                raw = await self._call_openai(api_key, prompt)
+
+            result = self._parse_ai_response(raw)
+            result["source"] = (
+                "Google Gemini 1.5 Flash" if provider == "gemini"
+                else "OpenAI GPT-4o Mini"
+            )
+            result["model"] = (
+                "gemini-1.5-flash" if provider == "gemini" else "gpt-4o-mini"
+            )
+            return result
+
+        except json.JSONDecodeError:
+            log.warning(f"AI returned invalid JSON. Raw: {raw[:300]}")
+            raise ValueError("AI returned invalid JSON — switching to rule-based.")
         except Exception as e:
-            return _rule_based_insights(df, col_map, kpis) + f"\n\n*Note: LLM unavailable ({e}). Using rule-based insights.*"
+            log.warning(f"AI insight call failed: {e}")
+            raise
 
-    return _rule_based_insights(df, col_map, kpis)
-
-
-def generate_query_insight(df: pd.DataFrame, col_map: dict, kpis: dict,
-                             query: str, result_summary: str,
-                             api_key: str = "", provider: str = "demo") -> str:
-    """Generate a short insight for a specific user query result."""
-    if api_key and provider != "demo":
-        prompt = (
-            f"User asked: '{query}'\n\n"
-            f"Analysis result:\n{result_summary}\n\n"
-            "Provide a 2–3 sentence business insight about this result. "
-            "Be specific, use numbers, and include one actionable recommendation."
+    # ── Gemini API ─────────────────────────────────────────────────────────
+    async def _call_gemini(self, api_key: str, prompt: str) -> str:
+        url = (
+            "https://generativelanguage.googleapis.com/v1beta/"
+            f"models/gemini-1.5-flash:generateContent?key={api_key}"
         )
-        try:
-            if provider == "openai":
-                return _call_openai(prompt, api_key)
-            elif provider == "gemini":
-                return _call_gemini(prompt, api_key)
-        except Exception:
-            pass
+        payload = {
+            "contents":       [{"parts": [{"text": _SYSTEM_PROMPT + "\n\n" + prompt}]}],
+            "generationConfig": {"maxOutputTokens": 1800, "temperature": 0.35},
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+            if "error" in data:
+                raise RuntimeError(data["error"]["message"])
+            return data["candidates"][0]["content"]["parts"][0]["text"]
 
-    # Rule-based per-query insights
-    q = query.lower()
-    rc = col_map.get("revenue"); pc = col_map.get("profit")
-    rgc = col_map.get("region"); cc = col_map.get("category")
-    prc = col_map.get("product")
+    # ── OpenAI API ─────────────────────────────────────────────────────────
+    async def _call_openai(self, api_key: str, prompt: str) -> str:
+        url = "https://api.openai.com/v1/chat/completions"
+        payload = {
+            "model":       "gpt-4o-mini",
+            "messages":    [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user",   "content": prompt},
+            ],
+            "max_tokens":  1800,
+            "temperature": 0.35,
+        }
+        headers = {
+            "Content-Type":  "application/json",
+            "Authorization": f"Bearer {api_key}",
+        }
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(url, json=payload, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            if "error" in data:
+                raise RuntimeError(data["error"]["message"])
+            return data["choices"][0]["message"]["content"]
 
-    if "region" in q and rc and rgc and all(c in df.columns for c in [rgc, rc]):
-        rg = df.groupby(rgc)[rc].sum()
-        best = rg.idxmax(); worst = rg.idxmin()
-        gap  = rg.max() - rg.min()
-        return (f"**{best}** generates the most revenue at ${rg.max():,.0f}. "
-                f"**{worst}** has the lowest at ${rg.min():,.0f}, creating a ${gap:,.0f} gap. "
-                f"Consider reallocating sales resources to underperforming regions for higher ROI.")
+    # ── Parse AI JSON response ─────────────────────────────────────────────
+    @staticmethod
+    def _parse_ai_response(raw: str) -> dict:
+        clean = raw.strip()
+        # Strip markdown code fences if any
+        clean = re.sub(r"^```(?:json)?\s*", "", clean)
+        clean = re.sub(r"\s*```$", "", clean)
+        parsed = json.loads(clean)
+        # Validate structure
+        if not isinstance(parsed.get("insights"), list):
+            raise ValueError("Missing 'insights' list in AI response.")
+        return parsed
 
-    if any(w in q for w in ["product","top","best"]) and prc and rc and all(c in df.columns for c in [prc, rc]):
-        pg = df.groupby(prc)[rc].sum()
-        top5_share = pg.nlargest(5).sum() / pg.sum() * 100
-        return (f"**{pg.idxmax()}** leads all products with ${pg.max():,.0f} in revenue. "
-                f"Top 5 products drive **{top5_share:.1f}%** of total revenue. "
-                f"Expand inventory and marketing for top performers to maximize returns.")
+    # ── Build compact data summary for the prompt ──────────────────────────
+    def _build_summary(self) -> str:
+        e       = self.engine
+        profile = self.profiler.full_profile()
+        qs      = profile["quality"]
+        lines   = [
+            f'Dataset: "{e.filename}" | Rows: {e.row_count:,} | Columns: {len(e.columns)}',
+            f'Detected fields: revenue={e.revenue_col}, profit={e.profit_col}, '
+            f'date={e.date_col}, category={e.category_col}, region={e.region_col}',
+            f'Quality: score={qs["score"]}%, nulls={qs["nulls"]}, duplicates={qs["duplicates"]}',
+            '',
+            'Column Statistics:',
+        ]
+        for col in profile["columns"][:14]:
+            if col["type"] == "numeric":
+                lines.append(
+                    f'  {col["name"]}: sum={_fmt(col.get("sum",0))}, '
+                    f'avg={_fmt(col.get("mean",0))}, min={_fmt(col.get("min",0))}, '
+                    f'max={_fmt(col.get("max",0))}, nulls={col["null_count"]}'
+                )
+            elif col["type"] == "categorical":
+                top3 = ", ".join(f'{v[0]}({v[1]})' for v in col.get("top_values", [])[:3])
+                lines.append(
+                    f'  {col["name"]}: {col.get("unique",0)} unique, top=[{top3}], '
+                    f'nulls={col["null_count"]}'
+                )
+            else:
+                lines.append(f'  {col["name"]}: {col["type"]}')
 
-    if "margin" in q and cc and rc and pc and all(c in df.columns for c in [cc, rc, pc]):
-        m = (df.groupby(cc)[pc].sum() / df.groupby(cc)[rc].sum() * 100)
-        return (f"**{m.idxmax()}** is the most profitable category at {m.max():.1f}% margin. "
-                f"**{m.idxmin()}** has the weakest margin at {m.min():.1f}%. "
-                f"Improving pricing or reducing costs in low-margin categories could significantly boost profits.")
-
-    if any(w in q for w in ["trend","monthly","time"]) and rc:
-        rev = kpis.get("total_revenue", 0)
-        avg = kpis.get("avg_order_value", 0)
-        return (f"Total revenue stands at ${rev:,.0f} with an average order value of ${avg:,.0f}. "
-                f"Seasonal patterns suggest targeted promotions in peak months could boost revenue further.")
-
-    return f"Analysis complete. {result_summary[:200] if result_summary else 'Review the chart for detailed insights.'}"
+        lines.append('')
+        lines.append(f'Sample rows: {json.dumps(e.sample(3), default=str)[:500]}')
+        return "\n".join(lines)
