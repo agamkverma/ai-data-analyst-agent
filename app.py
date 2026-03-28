@@ -1,929 +1,480 @@
 """
-app.py
-------
-AI Data Analyst Agent — Main Streamlit Application
-Run: streamlit run app.py
+app.py — DataLensAI v2.0
+FastAPI Application Entry Point
 
-This is the main entry point. It wires together all modules:
-  dataset_profiler → analysis_engine → chart_engine → insight_generator → query_engine
+Handles:
+  - File upload & session management
+  - API routing for all analytics endpoints
+  - CORS, error handling, lifecycle events
+  - Static file serving (HTML frontend)
+
+Author: Agam Kumar Verma
 """
 
 import os
-import io
-import warnings
-import pandas as pd
-import numpy as np
-import streamlit as st
-import plotly.graph_objects as go
+import uuid
+import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Optional
 
-warnings.filterwarnings("ignore")
+import uvicorn
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from dotenv import load_dotenv
 
-# Module imports
-from dataset_profiler import (
-    coerce_types, detect_column_roles, enrich_dataframe,
-    generate_full_profile, profile_to_context_string
+from data_engine import DataEngine
+from dataset_profiler import DatasetProfiler
+from chart_engine import ChartEngine
+from insight_generator import InsightGenerator
+from ai_query_engine import AIQueryEngine
+from prediction_engine import PredictionEngine
+
+# ── Load environment variables ──────────────────────────────────────────────
+load_dotenv()
+
+# ── Logging setup ────────────────────────────────────────────────────────────
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
-from analysis_engine import (
-    revenue_by_group, revenue_and_profit_by_group, profit_margin_by_group,
-    monthly_trend, quarterly_trend, category_distribution, top_n_by_metric,
-    bottom_n_by_metric, region_category_heatmap, sales_rep_performance,
-    revenue_forecast, correlation_analysis
+log = logging.getLogger("DataLensAI")
+
+# ── In-memory session store ──────────────────────────────────────────────────
+# Maps session_id -> { engine, profiler, charts, insights }
+# For production: replace with Redis or PostgreSQL-backed cache
+SESSIONS: dict[str, dict] = {}
+
+# ── Config ───────────────────────────────────────────────────────────────────
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_MB", "50"))
+MAX_ROWS         = int(os.getenv("MAX_ROWS", "500000"))
+CORS_ORIGINS     = os.getenv("CORS_ORIGINS", "*").split(",")
+PORT             = int(os.getenv("PORT", "8000"))
+OPENAI_KEY       = os.getenv("OPENAI_API_KEY", "")
+GEMINI_KEY       = os.getenv("GEMINI_API_KEY", "")
+AI_PROVIDER      = os.getenv("AI_PROVIDER", "gemini")
+
+
+# ── Lifespan ─────────────────────────────────────────────────────────────────
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    log.info("🚀 DataLensAI v2.0 starting up…")
+    log.info(f"   AI Provider : {AI_PROVIDER}")
+    log.info(f"   Gemini Key  : {'✓ set' if GEMINI_KEY else '✗ not set'}")
+    log.info(f"   OpenAI Key  : {'✓ set' if OPENAI_KEY else '✗ not set'}")
+    log.info(f"   CORS Origins: {CORS_ORIGINS}")
+    yield
+    log.info("🛑 DataLensAI shutting down — clearing sessions…")
+    SESSIONS.clear()
+
+
+# ── App instance ─────────────────────────────────────────────────────────────
+app = FastAPI(
+    title="DataLensAI API",
+    description="AI-powered Business Intelligence backend for DataLensAI v2.0",
+    version="2.0.0",
+    lifespan=lifespan,
 )
-from chart_engine import (
-    bar_chart, line_chart, pie_donut_chart, grouped_bar_chart,
-    area_chart, heatmap_chart, scatter_plot, combo_bar_line,
-    forecast_chart, kpi_gauge, _empty_chart
-)
-from insight_generator import generate_insights, generate_query_insight
-from query_engine import parse_query, llm_parse_query, detect_intent
 
-# ── Page Config ────────────────────────────────────────────────────────────────
-st.set_page_config(
-    page_title  = "AI Data Analyst Agent",
-    page_icon   = "📊",
-    layout      = "wide",
-    initial_sidebar_state = "expanded",
+# ── CORS ─────────────────────────────────────────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
-# ── Custom CSS ─────────────────────────────────────────────────────────────────
-st.markdown("""
-<style>
-/* ── Global ── */
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap');
 
-html, body, [class*="css"] {
-    font-family: 'DM Sans', system-ui, sans-serif !important;
-}
-.stApp {
-    background: #020817;
-    color: #E2E8F0;
-}
-
-/* ── Sidebar ── */
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #070D1C 0%, #040A16 100%);
-    border-right: 1px solid #1E293B;
-}
-section[data-testid="stSidebar"] .stMarkdown p { color: #94A3B8; font-size: 13px; }
-section[data-testid="stSidebar"] h2 { color: #E2E8F0 !important; font-family: 'Syne', sans-serif !important; }
-
-/* ── Headers ── */
-h1 { font-family: 'Syne', sans-serif !important; font-weight: 800 !important;
-     background: linear-gradient(135deg, #4F8EF7, #22D3A5);
-     -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
-h2, h3 { font-family: 'Syne', sans-serif !important; color: #E2E8F0 !important; }
-
-/* ── KPI Cards ── */
-.kpi-card {
-    background: linear-gradient(135deg, #0F172A, #1a2235);
-    border: 1px solid #334155;
-    border-radius: 14px;
-    padding: 1.2rem 1.3rem;
-    position: relative;
-    overflow: hidden;
-    transition: transform .2s, border-color .2s;
-    margin-bottom: 0.5rem;
-}
-.kpi-card:hover { transform: translateY(-3px); border-color: #4F8EF7; }
-.kpi-card::before {
-    content: '';
-    position: absolute; top: 0; left: 0; right: 0; height: 2px;
-    background: var(--accent, linear-gradient(90deg, #4F8EF7, #22D3A5));
-}
-.kpi-icon  { font-size: 22px; margin-bottom: 6px; }
-.kpi-label { font-size: 10px; font-weight: 700; letter-spacing: .14em;
-             text-transform: uppercase; color: #64748B; margin-bottom: 5px;
-             font-family: 'Syne', sans-serif; }
-.kpi-value { font-family: 'JetBrains Mono', monospace; font-size: 28px;
-             font-weight: 600; color: #F1F5F9; line-height: 1.1; }
-.kpi-delta { font-size: 11px; color: #64748B; margin-top: 4px; }
-.kpi-badge { font-size: 10px; padding: 2px 8px; border-radius: 20px;
-             font-weight: 700; font-family: 'Syne', sans-serif;
-             display: inline-block; margin-top: 5px; }
-.badge-green  { background: rgba(34,211,165,.12); color: #22D3A5; }
-.badge-blue   { background: rgba(79,142,247,.12);  color: #4F8EF7; }
-.badge-orange { background: rgba(247,135,79,.12);  color: #F7874F; }
-.badge-purple { background: rgba(168,85,247,.12);  color: #A855F7; }
-
-/* ── Insight Box ── */
-.insight-box {
-    background: linear-gradient(135deg, #0A1020, #0c1830);
-    border: 1px solid rgba(79,142,247,.2);
-    border-left: 3px solid #4F8EF7;
-    border-radius: 10px;
-    padding: 1rem 1.2rem;
-    font-size: 13px;
-    line-height: 1.8;
-    color: #CBD5E1;
-    margin-bottom: 1rem;
-}
-.insight-box .insight-label {
-    font-family: 'Syne', sans-serif;
-    font-size: 10px; font-weight: 700; letter-spacing: .12em;
-    text-transform: uppercase; color: #4F8EF7; margin-bottom: 8px;
-}
-
-/* ── Query Result ── */
-.query-result {
-    background: linear-gradient(135deg, #0A1020, #0c1a2e);
-    border: 1px solid #1E293B;
-    border-radius: 10px;
-    padding: 1rem;
-    margin: 0.6rem 0;
-}
-.query-result .intent-badge {
-    font-size: 10px; padding: 3px 10px; border-radius: 20px;
-    background: rgba(79,142,247,.12); color: #4F8EF7;
-    font-family: 'Syne', sans-serif; font-weight: 700;
-    letter-spacing: .06em; display: inline-block; margin-bottom: 8px;
-}
-
-/* ── Section Header ── */
-.section-header {
-    display: flex; align-items: center; gap: 10px;
-    margin: 1.5rem 0 0.8rem;
-    padding-bottom: 8px;
-    border-bottom: 1px solid #1E293B;
-}
-.section-header .sh-icon { font-size: 18px; }
-.section-header .sh-title { font-family: 'Syne', sans-serif; font-size: 14px;
-                             font-weight: 700; color: #E2E8F0; letter-spacing: .04em; }
-.section-header .sh-sub { font-size: 11px; color: #475569; margin-left: auto; }
-
-/* ── Dataset preview ── */
-.stDataFrame { border-radius: 10px !important; overflow: hidden !important; }
-.dataframe { background: #0F172A !important; color: #94A3B8 !important; }
-
-/* ── Streamlit component overrides ── */
-.stTextInput > div > div > input, .stTextArea > div > div > textarea {
-    background: #0F172A !important; border: 1px solid #334155 !important;
-    color: #E2E8F0 !important; border-radius: 8px !important;
-    font-family: 'DM Sans', sans-serif !important;
-}
-.stSelectbox > div > div { background: #0F172A !important; border: 1px solid #334155 !important; }
-.stButton > button {
-    background: linear-gradient(135deg, #1D4ED8, #2563EB) !important;
-    color: white !important; border: none !important;
-    border-radius: 8px !important; font-family: 'Syne', sans-serif !important;
-    font-weight: 600 !important; transition: all .2s !important;
-}
-.stButton > button:hover { transform: translateY(-1px) !important;
-    box-shadow: 0 4px 16px rgba(79,142,247,.3) !important; }
-div[data-testid="metric-container"] {
-    background: #0F172A; border: 1px solid #334155;
-    border-radius: 12px; padding: 1rem;
-}
-
-/* ── Expander ── */
-details { background: #0F172A !important; border: 1px solid #1E293B !important;
-          border-radius: 10px !important; }
-summary { color: #94A3B8 !important; }
-
-/* ── Tab bar ── */
-.stTabs [data-baseweb="tab-list"] {
-    background: #0A0E1A !important;
-    border-bottom: 1px solid #1E293B !important;
-    gap: 4px;
-}
-.stTabs [data-baseweb="tab"] {
-    color: #64748B !important;
-    font-family: 'Syne', sans-serif !important;
-    font-size: 12px !important; font-weight: 600 !important;
-    border-radius: 6px 6px 0 0 !important;
-}
-.stTabs [aria-selected="true"] {
-    color: #4F8EF7 !important;
-    border-bottom: 2px solid #4F8EF7 !important;
-    background: rgba(79,142,247,.05) !important;
-}
-
-/* ── Divider ── */
-hr { border-color: #1E293B !important; }
-
-/* ── Success / Warning ── */
-.stSuccess { background: rgba(34,211,165,.08) !important; border: 1px solid rgba(34,211,165,.2) !important; }
-.stWarning { background: rgba(247,195,79,.08) !important; border: 1px solid rgba(247,195,79,.2)  !important; }
-.stInfo    { background: rgba(79,142,247,.08)  !important; border: 1px solid rgba(79,142,247,.2)  !important; }
-.stError   { background: rgba(239,68,68,.08)   !important; border: 1px solid rgba(239,68,68,.2)   !important; }
-</style>
-""", unsafe_allow_html=True)
-
-SAMPLE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                            "data", "sample_sales_data.csv")
+# ── Request / Response models ─────────────────────────────────────────────────
+class QueryRequest(BaseModel):
+    session_id: str
+    query: str
+    use_ai: bool = False
+    api_key: Optional[str] = None
+    provider: Optional[str] = None  # "gemini" | "openai"
 
 
-# ── Utility ────────────────────────────────────────────────────────────────────
-
-def fmt(v: float) -> str:
-    if abs(v) >= 1e6: return f"${v/1e6:.2f}M"
-    if abs(v) >= 1e3: return f"${v/1e3:.1f}K"
-    return f"${v:,.0f}"
-
-
-def kpi_card(icon, label, value, badge_text="", badge_class="badge-blue",
-             delta="", accent="linear-gradient(90deg,#4F8EF7,#22D3A5)") -> str:
-    return f"""
-    <div class="kpi-card" style="--accent:{accent}">
-      <div class="kpi-icon">{icon}</div>
-      <div class="kpi-label">{label}</div>
-      <div class="kpi-value">{value}</div>
-      {"<div class='kpi-delta'>" + delta + "</div>" if delta else ""}
-      {"<span class='kpi-badge " + badge_class + "'>" + badge_text + "</span>" if badge_text else ""}
-    </div>"""
+class PredictRequest(BaseModel):
+    session_id: str
+    target_column: str
+    periods: int = 6
+    method: str = "linear"  # "linear" | "moving_avg" | "exponential"
 
 
-def section_header(icon, title, sub="") -> str:
-    return f"""
-    <div class="section-header">
-      <span class="sh-icon">{icon}</span>
-      <span class="sh-title">{title}</span>
-      {"<span class='sh-sub'>" + sub + "</span>" if sub else ""}
-    </div>"""
+class InsightRequest(BaseModel):
+    session_id: str
+    custom_question: Optional[str] = None
+    use_ai: bool = False
+    api_key: Optional[str] = None
+    provider: Optional[str] = None
 
 
-@st.cache_data(show_spinner=False)
-def load_and_profile(data: bytes) -> tuple[pd.DataFrame, dict]:
-    df      = pd.read_csv(io.BytesIO(data))
-    df      = coerce_types(df)
-    col_map = detect_column_roles(df)
-    df      = enrich_dataframe(df, col_map)
-    profile = generate_full_profile(df)
-    return df, profile
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def get_session(session_id: str) -> dict:
+    """Retrieve a session or raise 404."""
+    if session_id not in SESSIONS:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Session '{session_id}' not found. Upload a dataset first.",
+        )
+    return SESSIONS[session_id]
 
 
-# ── Sidebar ────────────────────────────────────────────────────────────────────
+def resolve_api_key(req_key: Optional[str], req_provider: Optional[str]) -> tuple[str, str]:
+    """Resolve API key and provider from request or environment."""
+    provider = req_provider or AI_PROVIDER
+    if req_key and len(req_key) > 8:
+        return req_key, provider
+    if provider == "gemini" and GEMINI_KEY:
+        return GEMINI_KEY, "gemini"
+    if provider == "openai" and OPENAI_KEY:
+        return OPENAI_KEY, "openai"
+    return "", provider
 
-with st.sidebar:
-    st.markdown("""
-    <div style="padding:1rem 0 0.5rem">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:4px">
-        <div style="width:34px;height:34px;border-radius:9px;
-                    background:linear-gradient(135deg,#4F8EF7,#22D3A5);
-                    display:flex;align-items:center;justify-content:center;font-size:18px">📊</div>
-        <div>
-          <div style="font-family:Syne,sans-serif;font-size:16px;font-weight:800;
-                      background:linear-gradient(135deg,#E2E8F0,#94A3B8);
-                      -webkit-background-clip:text;-webkit-text-fill-color:transparent">
-            AI Data Analyst
-          </div>
-          <div style="font-size:10px;color:#475569;letter-spacing:.1em;text-transform:uppercase">
-            Autonomous Analytics
-          </div>
-        </div>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-    st.divider()
 
-    # ── Dataset Upload ──
-    st.markdown("**📂 Dataset**")
-    upload = st.file_uploader("Upload CSV", type=["csv"], label_visibility="collapsed")
-
-    use_sample = st.button("▶ Load Sample Dataset", use_container_width=True)
-
-    st.divider()
-
-    # ── AI Settings ──
-    st.markdown("**🤖 AI Configuration**")
-    provider = st.selectbox("Provider", ["Demo (no key needed)", "OpenAI GPT-4o", "Google Gemini 1.5"],
-                              label_visibility="collapsed")
-    api_key = ""
-    if provider != "Demo (no key needed)":
-        api_key = st.text_input("API Key", type="password",
-                                 placeholder="sk-... or AI...",
-                                 label_visibility="collapsed")
-    provider_key = "demo" if provider.startswith("Demo") else (
-        "openai" if "OpenAI" in provider else "gemini"
+# ═══════════════════════════════════════════════════════════════════════════
+# ROOT — serve the HTML frontend
+# ═══════════════════════════════════════════════════════════════════════════
+@app.get("/", include_in_schema=False)
+async def serve_frontend():
+    html_path = Path("DataLensAI_v2.html")
+    if html_path.exists():
+        return FileResponse(html_path)
+    return JSONResponse(
+        {"message": "DataLensAI API v2.0 is running. Place DataLensAI_v2.html in this directory."}
     )
 
-    st.divider()
 
-    # ── Quick Queries ──
-    st.markdown("**💡 Quick Queries**")
-    quick_queries = [
-        ("📍", "Revenue by region"),
-        ("🏆", "Top 5 products by revenue"),
-        ("📈", "Monthly revenue trend"),
-        ("🥧", "Category breakdown"),
-        ("⚠️", "Bottom performing regions"),
-        ("💰", "Profit margin by category"),
-        ("🔵", "Revenue vs profit scatter"),
-        ("🗺️", "Heatmap category vs region"),
-        ("📅", "Quarterly revenue trend"),
-        ("🔮", "Revenue forecast"),
-    ]
-    if "quick_query" not in st.session_state:
-        st.session_state.quick_query = ""
-    for icon, q in quick_queries:
-        if st.button(f"{icon} {q}", use_container_width=True, key=f"qb_{q}"):
-            st.session_state.quick_query = q
-
-    st.divider()
-    st.markdown("""
-    <div style="font-size:11px;color:#334155;line-height:1.7">
-    ✅ Standalone — no API key needed<br>
-    ✅ 10+ chart types<br>
-    ✅ AI business insights<br>
-    ✅ Natural language queries<br>
-    ✅ Upload any CSV
-    </div>
-    """, unsafe_allow_html=True)
+# ═══════════════════════════════════════════════════════════════════════════
+# HEALTH CHECK
+# ═══════════════════════════════════════════════════════════════════════════
+@app.get("/health", tags=["System"])
+async def health():
+    return {
+        "status": "ok",
+        "version": "2.0.0",
+        "sessions_active": len(SESSIONS),
+        "ai_provider": AI_PROVIDER,
+        "gemini_configured": bool(GEMINI_KEY),
+        "openai_configured": bool(OPENAI_KEY),
+    }
 
 
-# ── Session State ───────────────────────────────────────────────────────────────
-if "df" not in st.session_state:
-    st.session_state.df      = None
-    st.session_state.profile = None
-    st.session_state.ctx     = ""
-    st.session_state.history = []  # chat history
+# ═══════════════════════════════════════════════════════════════════════════
+# POST /api/upload — Ingest CSV and build full analytics session
+# ═══════════════════════════════════════════════════════════════════════════
+@app.post("/api/upload", tags=["Dataset"])
+async def upload_dataset(
+    file: UploadFile = File(...),
+    session_id: str = Form(default=""),
+    max_rows: int = Form(default=MAX_ROWS),
+):
+    # Validate file type
+    if not file.filename.lower().endswith(".csv"):
+        raise HTTPException(status_code=400, detail="Only .csv files are supported.")
 
-# Load data
-if use_sample and os.path.exists(SAMPLE_PATH):
-    with open(SAMPLE_PATH, "rb") as f:
-        raw = f.read()
-    df, profile = load_and_profile(raw)
-    st.session_state.df      = df
-    st.session_state.profile = profile
-    st.session_state.ctx     = profile_to_context_string(df, profile)
-    st.success("✓ Sample dataset loaded — 120 rows · FY 2023 Sales Data")
+    # Validate file size
+    content = await file.read()
+    size_mb = len(content) / (1024 * 1024)
+    if size_mb > MAX_FILE_SIZE_MB:
+        raise HTTPException(
+            status_code=413,
+            detail=f"File too large ({size_mb:.1f} MB). Limit is {MAX_FILE_SIZE_MB} MB.",
+        )
 
-elif upload is not None:
-    raw = upload.read()
+    # Generate session ID
+    sid = session_id or str(uuid.uuid4())
+    log.info(f"Upload: {file.filename} ({size_mb:.2f} MB) → session={sid}")
+
     try:
-        df, profile = load_and_profile(raw)
-        st.session_state.df      = df
-        st.session_state.profile = profile
-        st.session_state.ctx     = profile_to_context_string(df, profile)
-        st.success(f"✓ {upload.name} loaded — {len(df):,} rows · {len(df.columns)} columns")
+        # ── 1. Parse & clean data ──────────────────────────────────────────
+        engine = DataEngine(filename=file.filename, max_rows=max_rows)
+        engine.load_from_bytes(content)
+        engine.clean()
+
+        # ── 2. Profile dataset ─────────────────────────────────────────────
+        profiler = DatasetProfiler(engine)
+        profile  = profiler.full_profile()
+
+        # ── 3. Build KPIs ──────────────────────────────────────────────────
+        kpis = profiler.build_kpis()
+
+        # ── 4. Build charts ────────────────────────────────────────────────
+        chart_engine = ChartEngine(engine, profiler)
+        charts       = chart_engine.build_all_charts()
+
+        # ── 5. Rule-based insights ─────────────────────────────────────────
+        ig      = InsightGenerator(engine, profiler)
+        insights = ig.rule_based_insights()
+
+        # ── Store session ──────────────────────────────────────────────────
+        SESSIONS[sid] = {
+            "engine":   engine,
+            "profiler": profiler,
+            "charts":   charts,
+            "insights": insights,
+            "kpis":     kpis,
+            "filename": file.filename,
+        }
+
+        return {
+            "session_id":      sid,
+            "filename":        file.filename,
+            "rows":            engine.row_count,
+            "columns":         len(engine.columns),
+            "quality_score":   profile["quality"]["score"],
+            "detected_fields": engine.detected_fields,
+            "kpis":            kpis,
+            "profile":         profile,
+            "charts_count":    len(charts),
+            "insights_count":  len(insights.get("insights", [])),
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:
-        st.error(f"❌ Failed to load dataset: {e}")
+        log.exception(f"Upload error: {e}")
+        raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
 
-# ── Welcome Screen ──────────────────────────────────────────────────────────────
-if st.session_state.df is None:
-    st.markdown("""
-    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;
-                min-height:70vh;text-align:center;padding:2rem">
-      <div style="font-size:64px;margin-bottom:1.2rem">🤖</div>
-      <h1 style="font-size:2.4rem;margin-bottom:.6rem">AI Data Analyst Agent</h1>
-      <p style="color:#64748B;font-size:15px;max-width:480px;line-height:1.8;margin-bottom:1.5rem">
-        Upload any CSV dataset and the AI will automatically analyze it,
-        generate charts, compute KPIs, and provide business insights — 
-        like a real data analyst.
-      </p>
-      <div style="display:flex;gap:12px;flex-wrap:wrap;justify-content:center;font-size:13px;color:#475569">
-        <span style="padding:6px 14px;background:#0F172A;border:1px solid #1E293B;border-radius:20px">📊 Auto Charts</span>
-        <span style="padding:6px 14px;background:#0F172A;border:1px solid #1E293B;border-radius:20px">💡 AI Insights</span>
-        <span style="padding:6px 14px;background:#0F172A;border:1px solid #1E293B;border-radius:20px">💬 NL Queries</span>
-        <span style="padding:6px 14px;background:#0F172A;border:1px solid #1E293B;border-radius:20px">🔮 Forecasting</span>
-        <span style="padding:6px 14px;background:#0F172A;border:1px solid #1E293B;border-radius:20px">🔍 Anomalies</span>
-      </div>
-    </div>
-    """, unsafe_allow_html=True)
-    st.stop()
+# ═══════════════════════════════════════════════════════════════════════════
+# GET /api/profile/{session_id} — Full dataset profile
+# ═══════════════════════════════════════════════════════════════════════════
+@app.get("/api/profile/{session_id}", tags=["Dataset"])
+async def get_profile(session_id: str):
+    sess = get_session(session_id)
+    return sess["profiler"].full_profile()
 
 
-# ── Main Dashboard ──────────────────────────────────────────────────────────────
-df      = st.session_state.df
-profile = st.session_state.profile
-col_map = profile["col_map"]
-kpis    = profile["kpis"]
-
-rc  = col_map.get("revenue");   pc  = col_map.get("profit")
-cc  = col_map.get("category");  rgc = col_map.get("region")
-prc = col_map.get("product");   dc  = col_map.get("date")
-qc  = col_map.get("quantity");  cuc = col_map.get("customer")
-
-# ── Page Header ────────────────────────────────────────────────────────────────
-col_h1, col_h2 = st.columns([3, 1])
-with col_h1:
-    st.markdown("<h1 style='margin-bottom:0'>AI Data Analyst Agent</h1>", unsafe_allow_html=True)
-    st.markdown(f"<p style='color:#475569;font-size:13px;margin-top:4px'>"
-                f"{kpis.get('total_records',0):,} records · "
-                f"{profile['col_count']} columns · "
-                f"{len(profile['num_cols'])} numeric · "
-                f"{len(profile['cat_cols'])} categorical"
-                f"{'  ·  ' + profile['date_range']['min'] + ' → ' + profile['date_range']['max'] if profile.get('date_range') else ''}"
-                f"</p>", unsafe_allow_html=True)
-with col_h2:
-    st.download_button("⬇ Export CSV", df.to_csv(index=False),
-                        file_name="analysis_export.csv", mime="text/csv",
-                        use_container_width=True)
+# ═══════════════════════════════════════════════════════════════════════════
+# GET /api/kpis/{session_id} — KPI cards
+# ═══════════════════════════════════════════════════════════════════════════
+@app.get("/api/kpis/{session_id}", tags=["Analytics"])
+async def get_kpis(session_id: str):
+    sess = get_session(session_id)
+    return {"kpis": sess["kpis"]}
 
 
-# ── KPI Cards Row ──────────────────────────────────────────────────────────────
-st.markdown(section_header("📈", "Key Performance Indicators",
-                            f"FY {profile['date_range']['min'][:4] if profile.get('date_range') else '2023'}"),
-            unsafe_allow_html=True)
-
-c1, c2, c3, c4, c5, c6 = st.columns(6)
-with c1:
-    st.markdown(kpi_card("💵", "Total Revenue", fmt(kpis.get("total_revenue",0)),
-                          "Primary KPI", "badge-blue",
-                          accent="linear-gradient(90deg,#4F8EF7,#22D3A5)"),
-                unsafe_allow_html=True)
-with c2:
-    st.markdown(kpi_card("📈", "Total Profit", fmt(kpis.get("total_profit",0)),
-                          "Net Income", "badge-green",
-                          accent="linear-gradient(90deg,#22D3A5,#06B6D4)"),
-                unsafe_allow_html=True)
-with c3:
-    margin = kpis.get("profit_margin_pct", 0)
-    m_color = "#22D3A5" if margin >= 30 else "#F7C34F" if margin >= 15 else "#EF4444"
-    badge_cls = "badge-green" if margin >= 30 else "badge-orange" if margin >= 15 else "badge-purple"
-    st.markdown(kpi_card("🎯", "Profit Margin", f"{margin:.1f}%",
-                          "Excellent" if margin>=30 else "Good" if margin>=20 else "Monitor",
-                          badge_cls, accent=f"linear-gradient(90deg,{m_color},{m_color}88)"),
-                unsafe_allow_html=True)
-with c4:
-    st.markdown(kpi_card("📦", "Avg Order Value", fmt(kpis.get("avg_order_value",0)),
-                          f"{kpis.get('total_records',0):,} orders", "badge-orange",
-                          accent="linear-gradient(90deg,#F7874F,#F7C34F)"),
-                unsafe_allow_html=True)
-with c5:
-    st.markdown(kpi_card("🌎", "Best Region", str(kpis.get("best_region","N/A")),
-                          fmt(kpis.get("best_region_rev",0)), "badge-purple",
-                          accent="linear-gradient(90deg,#A855F7,#EC4899)"),
-                unsafe_allow_html=True)
-with c6:
-    st.markdown(kpi_card("⭐", "Best Category", str(kpis.get("best_category","N/A")),
-                          fmt(kpis.get("best_category_rev",0)), "badge-blue",
-                          accent="linear-gradient(90deg,#06B6D4,#4F8EF7)"),
-                unsafe_allow_html=True)
+# ═══════════════════════════════════════════════════════════════════════════
+# GET /api/charts/{session_id} — Chart configurations
+# ═══════════════════════════════════════════════════════════════════════════
+@app.get("/api/charts/{session_id}", tags=["Analytics"])
+async def get_charts(session_id: str, format: str = "chartjs"):
+    """
+    format: "chartjs" → Chart.js-compatible JSON (for frontend)
+            "plotly"  → Plotly JSON (for server-side rendering)
+    """
+    sess = get_session(session_id)
+    engine = ChartEngine(sess["engine"], sess["profiler"])
+    if format == "plotly":
+        return {"charts": engine.build_plotly_charts()}
+    return {"charts": sess["charts"]}
 
 
-# ── Main Tabs ───────────────────────────────────────────────────────────────────
-tab_analysis, tab_dashboard, tab_query, tab_forecast, tab_profile, tab_preview = st.tabs([
-    "📈 Analysis", "📊 Dashboard", "💬 AI Query", "🔮 Forecast", "📋 Profile", "🗂 Data Preview"
-])
+# ═══════════════════════════════════════════════════════════════════════════
+# POST /api/insights — AI or rule-based insights
+# ═══════════════════════════════════════════════════════════════════════════
+@app.post("/api/insights", tags=["AI"])
+async def get_insights(req: InsightRequest):
+    sess = get_session(req.session_id)
+    ig   = InsightGenerator(sess["engine"], sess["profiler"])
 
-
-# ══════════════════════════════════════════════════════════════════════
-# TAB 1: ANALYSIS — Auto-generated charts
-# ══════════════════════════════════════════════════════════════════════
-with tab_analysis:
-
-    # ── AI Insights ──
-    st.markdown(section_header("💡", "AI Business Insights", "Auto-generated from your dataset"),
-                unsafe_allow_html=True)
-
-    with st.spinner("🤖 Generating insights…"):
-        insights = generate_insights(df, col_map, kpis, st.session_state.ctx,
-                                      api_key, provider_key)
-    st.markdown(f'<div class="insight-box"><div class="insight-label">💡 AI Analysis</div>{insights}</div>',
-                unsafe_allow_html=True)
-
-    st.divider()
-
-    # ── Chart Row 1: Revenue by Region + Monthly Trend ──
-    st.markdown(section_header("📊", "Revenue Analysis"), unsafe_allow_html=True)
-    col1, col2 = st.columns([1, 1.4])
-
-    with col1:
-        if rgc and rc:
-            data = revenue_by_group(df, rgc, rc)
-            fig  = bar_chart(data, rgc, rc,
-                              title="Revenue by Region", horizontal=False)
-            st.plotly_chart(fig, use_container_width=True)
+    if req.use_ai:
+        api_key, provider = resolve_api_key(req.api_key, req.provider)
+        if not api_key:
+            log.warning("No API key — falling back to rule-based insights")
+            insights = ig.rule_based_insights(custom_question=req.custom_question)
         else:
-            st.info("Region or Revenue column not detected in this dataset.")
+            try:
+                insights = await ig.ai_insights(
+                    api_key=api_key,
+                    provider=provider,
+                    custom_question=req.custom_question,
+                )
+            except Exception as e:
+                log.warning(f"AI insight error ({e}) — falling back to rule-based")
+                insights = ig.rule_based_insights(custom_question=req.custom_question)
+    else:
+        insights = ig.rule_based_insights(custom_question=req.custom_question)
 
-    with col2:
-        if dc and rc:
-            data = monthly_trend(df, dc, rc, pc)
-            cols = [c for c in [rc, pc] if c in data.columns]
-            fig  = line_chart(data, "Period", cols, title="Monthly Revenue & Profit Trend")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Date or Revenue column not detected.")
-
-    # ── Chart Row 2: Category Pie + Top 5 Products ──
-    col3, col4 = st.columns(2)
-
-    with col3:
-        if cc and rc:
-            data = category_distribution(df, cc, rc)
-            fig  = pie_donut_chart(data, cc, rc, title="Revenue Distribution by Category")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Category or Revenue column not detected.")
-
-    with col4:
-        if prc and rc:
-            data = top_n_by_metric(df, prc, rc, n=5)
-            fig  = bar_chart(data, prc, rc, title="Top 5 Products by Revenue",
-                              horizontal=True, top_n=5)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Product or Revenue column not detected.")
-
-    # ── Chart Row 3: Profit Margin + Region×Category Heatmap ──
-    col5, col6 = st.columns(2)
-
-    with col5:
-        if cc and rc and pc:
-            data = revenue_and_profit_by_group(df, cc, rc, pc)
-            fig  = combo_bar_line(data, cc, rc, "Margin%",
-                                   title="Revenue vs Profit Margin by Category")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Category, Revenue, or Profit column not detected.")
-
-    with col6:
-        if rgc and cc and rc:
-            data = region_category_heatmap(df, rgc, cc, rc)
-            fig  = heatmap_chart(data, title="Revenue Heatmap: Category × Region")
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.info("Region or Category column not detected.")
-
-    # ── Chart Row 4: Revenue vs Profit Scatter + Sales Rep ──
-    col7, col8 = st.columns(2)
-
-    with col7:
-        if rc and pc:
-            fig = scatter_plot(df, rc, pc, color_col=cc,
-                                title="Revenue vs Profit (by Category)")
-            st.plotly_chart(fig, use_container_width=True)
-
-    with col8:
-        rep_col = None
-        for col in df.columns:
-            if any(kw in col.lower() for kw in ["rep","salesperson","agent","seller"]):
-                rep_col = col; break
-        if rep_col and rc:
-            data = sales_rep_performance(df, rep_col, rc, pc)
-            fig  = bar_chart(data, rep_col, rc, title="Sales Rep Performance",
-                              horizontal=True)
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            if qc and cc:
-                data = top_n_by_metric(df, cc, qc, n=5) if qc else pd.DataFrame()
-                if not data.empty:
-                    fig = bar_chart(data, cc, qc, title="Units Sold by Category", horizontal=False)
-                    st.plotly_chart(fig, use_container_width=True)
+    # Update cached insights
+    SESSIONS[req.session_id]["insights"] = insights
+    return insights
 
 
-# ══════════════════════════════════════════════════════════════════════
-# TAB 2: DASHBOARD — KPI Summary Dashboard
-# ══════════════════════════════════════════════════════════════════════
-with tab_dashboard:
-    st.markdown(section_header("📊", "Executive Dashboard", "Auto-generated business intelligence"),
-                unsafe_allow_html=True)
-
-    # Row 1: Gauges
-    g1, g2, g3 = st.columns(3)
-    with g1:
-        if kpis.get("total_revenue"):
-            fig = kpi_gauge(kpis["total_revenue"], kpis["total_revenue"]*1.5,
-                             "Total Revenue", "#4F8EF7")
-            st.plotly_chart(fig, use_container_width=True)
-    with g2:
-        if kpis.get("total_profit"):
-            fig = kpi_gauge(kpis["total_profit"], kpis["total_revenue"],
-                             "Total Profit", "#22D3A5")
-            st.plotly_chart(fig, use_container_width=True)
-    with g3:
-        if kpis.get("avg_order_value"):
-            fig = kpi_gauge(kpis["avg_order_value"], kpis["max_order_value"],
-                             "Avg Order Value", "#A855F7")
-            st.plotly_chart(fig, use_container_width=True)
-
-    # Row 2: Top products + quarterly
-    d1, d2 = st.columns([1.2, 1])
-    with d1:
-        if prc and rc:
-            data = top_n_by_metric(df, prc, rc, n=10)
-            fig  = bar_chart(data, prc, rc, title="Top 10 Products by Revenue",
-                              horizontal=True)
-            st.plotly_chart(fig, use_container_width=True)
-    with d2:
-        if dc and rc:
-            data = quarterly_trend(df, dc, rc)
-            if not data.empty:
-                fig = area_chart(data, "Period", rc, title="Quarterly Revenue")
-                st.plotly_chart(fig, use_container_width=True)
-
-    # Row 3: Revenue + profit grouped by region
-    if rgc and rc and pc:
-        data = revenue_and_profit_by_group(df, rgc, rc, pc)
-        fig  = grouped_bar_chart(data, rgc, [rc, pc],
-                                  title="Revenue & Profit by Region — Side by Side")
-        st.plotly_chart(fig, use_container_width=True)
+# ═══════════════════════════════════════════════════════════════════════════
+# GET /api/insights/{session_id} — Cached insights (fast)
+# ═══════════════════════════════════════════════════════════════════════════
+@app.get("/api/insights/{session_id}", tags=["AI"])
+async def get_cached_insights(session_id: str):
+    sess = get_session(session_id)
+    return sess.get("insights", {})
 
 
-# ══════════════════════════════════════════════════════════════════════
-# TAB 3: QUERY — Natural Language Interface
-# ══════════════════════════════════════════════════════════════════════
-with tab_query:
-    st.markdown(section_header("💬", "Natural Language Query Interface",
-                                "Ask questions about your data in plain English"),
-                unsafe_allow_html=True)
+# ═══════════════════════════════════════════════════════════════════════════
+# POST /api/query — Natural language query
+# ═══════════════════════════════════════════════════════════════════════════
+@app.post("/api/query", tags=["AI"])
+async def query_data(req: QueryRequest):
+    if not req.query or not req.query.strip():
+        raise HTTPException(status_code=400, detail="Query cannot be empty.")
 
-    # Query input
-    qcol1, qcol2 = st.columns([5, 1])
-    with qcol1:
-        user_query = st.text_input(
-            "Ask a question",
-            value=st.session_state.quick_query,
-            placeholder="e.g. Show revenue by region / Top 5 products by profit / Monthly sales trend",
-            label_visibility="collapsed",
-        )
-        st.session_state.quick_query = ""
-    with qcol2:
-        run_query = st.button("🔍 Analyze", use_container_width=True)
+    sess = get_session(req.session_id)
+    qe   = AIQueryEngine(sess["engine"], sess["profiler"])
 
-    # Process query
-    if run_query and user_query.strip():
-        with st.spinner("🤖 Analyzing your question…"):
-            # Try LLM parse first, fall back to rule-based
-            plan = {}
-            if api_key and provider_key != "demo":
-                plan = llm_parse_query(user_query, st.session_state.ctx, api_key, provider_key)
-            if not plan:
-                plan = parse_query(user_query, col_map, df.columns.tolist())
+    if req.use_ai:
+        api_key, provider = resolve_api_key(req.api_key, req.provider)
+        if api_key:
+            try:
+                return await qe.ai_answer(req.query, api_key=api_key, provider=provider)
+            except Exception as e:
+                log.warning(f"AI query error ({e}) — falling back to rule-based")
 
-            intent    = plan.get("intent", "kpi_summary")
-            group_col = plan.get("group_by")
-            metric    = plan.get("metric") or rc
-            top_n     = plan.get("top_n", 5)
-            ascending = plan.get("ascending", False)
-            title     = plan.get("title", user_query.title())
-            subtitle  = plan.get("subtitle", "")
-            chart_t   = plan.get("chart", "bar")
-
-        # Render result
-        st.markdown(f'<div class="query-result">'
-                    f'<span class="intent-badge">Intent: {intent}</span>'
-                    f'<br><b style="color:#E2E8F0">{title}</b>'
-                    f'{"<br><span style=color:#475569;font-size:11px>" + subtitle + "</span>" if subtitle else ""}'
-                    f'</div>',
-                    unsafe_allow_html=True)
-
-        # ── Execute chart based on intent ──
-        fig = None
-        result_df = pd.DataFrame()
-
-        if chart_t == "pie" or "pie" in intent or "distribution" in intent:
-            if group_col and metric:
-                result_df = category_distribution(df, group_col, metric)
-                fig = pie_donut_chart(result_df, group_col, metric, title=title)
-
-        elif chart_t == "heatmap" or "heat" in intent:
-            if rgc and cc and rc:
-                result_df = region_category_heatmap(df, rgc, cc, rc)
-                fig = heatmap_chart(result_df, title=title)
-
-        elif chart_t in ("line","area") or "trend" in intent or "monthly" in intent:
-            if dc and metric:
-                freq = "QE" if "quarter" in intent else "ME"
-                result_df = monthly_trend(df, dc, metric, freq=freq)
-                fig = area_chart(result_df, "Period", metric, title=title)
-
-        elif chart_t == "scatter" or "scatter" in intent:
-            if rc and pc:
-                fig = scatter_plot(df, rc, pc, color_col=cc, title=title)
-                result_df = df[[rc, pc]].head(20)
-
-        elif chart_t == "forecast" or "forecast" in intent:
-            if dc and rc:
-                result_df = revenue_forecast(df, dc, rc, periods_ahead=3)
-                fig = forecast_chart(result_df, dc, rc, title=title)
-
-        elif chart_t == "kpi" or intent == "kpi_summary":
-            col_a, col_b, col_c = st.columns(3)
-            with col_a:
-                st.metric("Total Revenue", fmt(kpis.get("total_revenue",0)))
-                st.metric("Avg Order Value", fmt(kpis.get("avg_order_value",0)))
-            with col_b:
-                st.metric("Total Profit", fmt(kpis.get("total_profit",0)))
-                st.metric("Total Units", f"{kpis.get('total_units',0):,}")
-            with col_c:
-                st.metric("Profit Margin", f"{kpis.get('profit_margin_pct',0):.1f}%")
-                st.metric("Best Region", str(kpis.get("best_region","N/A")))
-
-        else:
-            # Default: bar chart
-            if group_col and metric and group_col in df.columns and metric in df.columns:
-                result_df = revenue_by_group(df, group_col, metric, top_n=top_n, ascending=ascending)
-                fig = bar_chart(result_df, group_col, metric, title=title,
-                                 horizontal=True, top_n=top_n)
-
-        if fig:
-            st.plotly_chart(fig, use_container_width=True)
-
-        # AI insight for this query
-        result_summary = result_df.head(5).to_string() if not result_df.empty else ""
-        insight = generate_query_insight(df, col_map, kpis, user_query,
-                                          result_summary, api_key, provider_key)
-        st.markdown(f'<div class="insight-box"><div class="insight-label">💡 Insight</div>{insight}</div>',
-                    unsafe_allow_html=True)
-
-        # Add to history
-        st.session_state.history.append({
-            "query":   user_query,
-            "intent":  intent,
-            "insight": insight,
-        })
-
-    # ── Chat History ──
-    if st.session_state.history:
-        st.divider()
-        st.markdown(section_header("📜", "Query History"), unsafe_allow_html=True)
-        for i, h in enumerate(reversed(st.session_state.history[-5:])):
-            with st.expander(f"🔍 {h['query']}", expanded=(i == 0)):
-                st.markdown(f"**Intent:** `{h['intent']}`")
-                st.markdown(h["insight"])
+    return qe.rule_answer(req.query)
 
 
-# ══════════════════════════════════════════════════════════════════════
-# TAB 4: FORECAST & ANOMALY
-# ══════════════════════════════════════════════════════════════════════
-with tab_forecast:
-    st.markdown(section_header("🔮", "Predictive Analytics",
-                                "Forecasting & anomaly detection powered by sklearn"),
-                unsafe_allow_html=True)
+# ═══════════════════════════════════════════════════════════════════════════
+# POST /api/predict — Prediction / forecasting
+# ═══════════════════════════════════════════════════════════════════════════
+@app.post("/api/predict", tags=["ML"])
+async def predict(req: PredictRequest):
+    sess   = get_session(req.session_id)
+    engine = sess["engine"]
 
-    fc1, fc2 = st.columns([2, 1])
-    with fc1:
-        periods_ahead = st.slider("Forecast periods (months)", 1, 12, 3)
-    with fc2:
-        forecast_metric = st.selectbox(
-            "Metric",
-            [c for c in [rc, pc] if c],
-            label_visibility="visible"
+    if req.target_column not in engine.df.columns:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Column '{req.target_column}' not found in dataset.",
         )
 
-    if dc and forecast_metric:
-        with st.spinner("Computing forecast…"):
-            fc_map = {**col_map, "revenue": forecast_metric}
-            fore_df = revenue_forecast(df, dc, forecast_metric, periods_ahead)
-        if not fore_df.empty:
-            fig = forecast_chart(fore_df, dc, forecast_metric,
-                                  title=f"{forecast_metric} Forecast — Next {periods_ahead} Months")
-            st.plotly_chart(fig, use_container_width=True)
-
-            st.markdown("""
-            <div class="insight-box">
-            <div class="insight-label">ℹ️ Methodology</div>
-            <b>Polynomial Regression</b> (degree 2 if ≥ 6 months of data, else linear regression)
-            fitted on historical monthly aggregates. The shaded band represents ±1σ confidence range.
-            Forecast values are annotated directly on the chart.
-            </div>""", unsafe_allow_html=True)
-
-    # ── Anomaly Detection ──
-    st.divider()
-    st.markdown(section_header("🔍", "Anomaly Detection", "Z-score method"), unsafe_allow_html=True)
-
-    if dc and rc:
-        trend = monthly_trend(df, dc, rc)
-        if not trend.empty:
-            mn = trend[rc].mean()
-            sd = trend[rc].std()
-            trend["Z"] = (trend[rc] - mn) / sd
-            trend["Anomaly"] = trend["Z"].abs() > 2.0
-            n_anomalies = trend["Anomaly"].sum()
-
-            # Build chart
-            fig = go.Figure()
-            fig.add_trace(go.Scatter(
-                x=trend["Period"].astype(str), y=trend[rc],
-                mode="lines+markers", name="Monthly Revenue",
-                line=dict(color="#4F8EF7", width=2.5),
-                marker=dict(size=6),
-                fill="tozeroy", fillcolor="rgba(79,142,247,0.06)",
-            ))
-            if n_anomalies > 0:
-                anom = trend[trend["Anomaly"]]
-                fig.add_trace(go.Scatter(
-                    x=anom["Period"].astype(str), y=anom[rc],
-                    mode="markers", name=f"Anomaly ({n_anomalies})",
-                    marker=dict(color="#EF4444", size=14, symbol="x",
-                                line=dict(width=2.5, color="#EF4444")),
-                ))
-            fig.add_hline(y=mn, line_dash="dash", line_color="#64748B",
-                           annotation_text=f"Mean: {fmt(mn)}", annotation_font_color="#64748B")
-            fig.add_hrect(y0=mn-2*sd, y1=mn+2*sd, fillcolor="rgba(79,142,247,0.05)",
-                           line_width=0, annotation_text="Normal band (±2σ)")
-            fig.update_layout(
-                paper_bgcolor="#111827", plot_bgcolor="#0F1525",
-                font=dict(color="#94A3B8"), title="Monthly Revenue — Anomaly Detection",
-                title_font=dict(color="#E2E8F0", size=15),
-                legend=dict(bgcolor="rgba(0,0,0,0)", font_color="#94A3B8"),
-                xaxis=dict(gridcolor="#1E293B", tickfont_color="#94A3B8"),
-                yaxis=dict(gridcolor="#1E293B", tickfont_color="#94A3B8"),
-                margin=dict(l=40, r=20, t=50, b=40),
-            )
-            st.plotly_chart(fig, use_container_width=True)
-            st.info(f"🔍 Detected **{n_anomalies}** anomalous month(s) using Z-score > ±2σ methodology.")
-
-
-# ══════════════════════════════════════════════════════════════════════
-# TAB 5: PROFILE — Dataset structure & statistics
-# ══════════════════════════════════════════════════════════════════════
-with tab_profile:
-    st.markdown(section_header("📋", "Dataset Profile", "Auto-detected structure and statistics"),
-                unsafe_allow_html=True)
-
-    # Overview row
-    p1, p2, p3, p4 = st.columns(4)
-    p1.metric("Total Rows", f"{profile['row_count']:,}")
-    p2.metric("Total Columns", profile['col_count'])
-    p3.metric("Numeric Columns", len(profile['num_cols']))
-    p4.metric("Missing Values", profile['missing_total'])
-
-    st.divider()
-
-    # Column roles + numeric stats
-    pr1, pr2 = st.columns(2)
-
-    with pr1:
-        st.markdown("#### 🔍 Detected Column Roles")
-        roles_data = {"Role": [], "Column": [], "Type": []}
-        for role, col in col_map.items():
-            roles_data["Role"].append(role.title())
-            roles_data["Column"].append(col)
-            roles_data["Type"].append(str(df[col].dtype))
-        st.dataframe(pd.DataFrame(roles_data), use_container_width=True, hide_index=True)
-
-    with pr2:
-        st.markdown("#### 📊 Categorical Column Stats")
-        cat_data = {"Column": [], "Unique Values": [], "Top Value": [], "Top Count": []}
-        for col, stats in profile["cat_stats"].items():
-            cat_data["Column"].append(col)
-            cat_data["Unique Values"].append(stats["unique"])
-            cat_data["Top Value"].append(stats["top_val"])
-            cat_data["Top Count"].append(stats["top_cnt"])
-        st.dataframe(pd.DataFrame(cat_data), use_container_width=True, hide_index=True)
-
-    # Numeric stats
-    st.markdown("#### 📉 Numeric Column Statistics")
-    if profile["num_stats"]:
-        st.dataframe(
-            pd.DataFrame(profile["num_stats"]).T.reset_index().rename(columns={"index": "Column"}),
-            use_container_width=True, hide_index=True
-        )
-
-    # Correlation
-    if len(profile["num_cols"]) >= 2:
-        st.markdown("#### 🔗 Correlation Matrix")
-        corr = correlation_analysis(df, col_map)
-        if not corr.empty:
-            fig = heatmap_chart(corr, title="Numeric Column Correlation")
-            st.plotly_chart(fig, use_container_width=True)
-
-
-# ══════════════════════════════════════════════════════════════════════
-# TAB 6: DATA PREVIEW
-# ══════════════════════════════════════════════════════════════════════
-with tab_preview:
-    st.markdown(section_header("🗂", "Dataset Preview",
-                                f"Showing first 100 rows of {profile['row_count']:,} total"),
-                unsafe_allow_html=True)
-
-    # Filters
-    f1, f2, f3 = st.columns(3)
-    filter_region = filter_cat = None
-    with f1:
-        if rgc:
-            regions = ["All"] + sorted(df[rgc].dropna().unique().tolist())
-            filter_region = st.selectbox("Filter by Region", regions)
-    with f2:
-        if cc:
-            cats = ["All"] + sorted(df[cc].dropna().unique().tolist())
-            filter_cat = st.selectbox("Filter by Category", cats)
-    with f3:
-        search = st.text_input("Search (any column)", placeholder="Type to filter…")
-
-    filtered = df.copy()
-    if filter_region and filter_region != "All" and rgc:
-        filtered = filtered[filtered[rgc] == filter_region]
-    if filter_cat and filter_cat != "All" and cc:
-        filtered = filtered[filtered[cc] == filter_cat]
-    if search:
-        mask = filtered.astype(str).apply(lambda col: col.str.contains(search, case=False, na=False)).any(axis=1)
-        filtered = filtered[mask]
-
-    vis_cols = [c for c in filtered.columns if not c.startswith("_")]
-    st.dataframe(
-        filtered[vis_cols].head(100),
-        use_container_width=True,
-        height=400,
+    pe     = PredictionEngine(engine)
+    result = pe.forecast(
+        target_col=req.target_column,
+        periods=max(1, min(req.periods, 36)),
+        method=req.method,
     )
-    st.caption(f"Showing {min(100, len(filtered)):,} of {len(filtered):,} filtered rows")
-
-    # Download filtered
-    st.download_button("⬇ Download Filtered Data",
-                        filtered[vis_cols].to_csv(index=False),
-                        file_name="filtered_export.csv", mime="text/csv")
+    return result
 
 
-# ── Footer ──────────────────────────────────────────────────────────────────────
-st.divider()
-st.markdown("""
-<div style="text-align:center;font-size:11px;color:#334155;padding:0.5rem 0">
-  AI Data Analyst Agent &nbsp;·&nbsp;
-  Python · Pandas · Streamlit · Plotly · scikit-learn &nbsp;·&nbsp;
-  Portfolio Project
-</div>
-""", unsafe_allow_html=True)
+# ═══════════════════════════════════════════════════════════════════════════
+# GET /api/predict/anomalies/{session_id} — Anomaly detection
+# ═══════════════════════════════════════════════════════════════════════════
+@app.get("/api/predict/anomalies/{session_id}", tags=["ML"])
+async def detect_anomalies(session_id: str, column: Optional[str] = None):
+    sess = get_session(session_id)
+    pe   = PredictionEngine(sess["engine"])
+    return pe.detect_anomalies(target_col=column)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GET /api/predict/correlation/{session_id} — Correlation matrix
+# ═══════════════════════════════════════════════════════════════════════════
+@app.get("/api/predict/correlation/{session_id}", tags=["ML"])
+async def correlation_matrix(session_id: str):
+    sess = get_session(session_id)
+    pe   = PredictionEngine(sess["engine"])
+    return pe.correlation_matrix()
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# EXPORT ENDPOINTS
+# ═══════════════════════════════════════════════════════════════════════════
+@app.get("/api/export/csv/{session_id}", tags=["Export"])
+async def export_csv(session_id: str):
+    sess   = get_session(session_id)
+    engine = sess["engine"]
+    csv_bytes = engine.export_csv()
+    filename  = engine.filename.replace(".csv", "_clean.csv")
+    return StreamingResponse(
+        iter([csv_bytes]),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@app.get("/api/export/json/{session_id}", tags=["Export"])
+async def export_json(session_id: str):
+    import json
+    sess     = get_session(session_id)
+    engine   = sess["engine"]
+    profiler = sess["profiler"]
+    payload  = {
+        "meta": {
+            "file":        engine.filename,
+            "rows":        engine.row_count,
+            "columns":     len(engine.columns),
+            "quality":     profiler.quality_score(),
+            "detected":    engine.detected_fields,
+            "generated_at": str(__import__("datetime").datetime.now().isoformat()),
+        },
+        "kpis":     sess["kpis"],
+        "profile":  profiler.full_profile(),
+        "insights": sess.get("insights"),
+    }
+    filename = engine.filename.replace(".csv", "_analysis.json")
+    return StreamingResponse(
+        iter([json.dumps(payload, indent=2, default=str).encode()]),
+        media_type="application/json",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# DELETE /api/session/{session_id} — Clear session
+# ═══════════════════════════════════════════════════════════════════════════
+@app.delete("/api/session/{session_id}", tags=["System"])
+async def delete_session(session_id: str):
+    if session_id in SESSIONS:
+        del SESSIONS[session_id]
+        log.info(f"Session deleted: {session_id}")
+        return {"message": f"Session '{session_id}' cleared."}
+    raise HTTPException(status_code=404, detail="Session not found.")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GET /api/sessions — List active sessions (dev only)
+# ═══════════════════════════════════════════════════════════════════════════
+@app.get("/api/sessions", tags=["System"], include_in_schema=False)
+async def list_sessions():
+    return {
+        "active": len(SESSIONS),
+        "sessions": [
+            {
+                "id":       sid,
+                "file":     s["filename"],
+                "rows":     s["engine"].row_count,
+                "columns":  len(s["engine"].columns),
+            }
+            for sid, s in SESSIONS.items()
+        ],
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# GLOBAL ERROR HANDLER
+# ═══════════════════════════════════════════════════════════════════════════
+@app.exception_handler(Exception)
+async def global_error_handler(request: Request, exc: Exception):
+    log.error(f"Unhandled error on {request.url}: {exc}")
+    return JSONResponse(
+        status_code=500,
+        content={"error": "Internal server error", "detail": str(exc)},
+    )
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# ENTRY POINT
+# ═══════════════════════════════════════════════════════════════════════════
+if __name__ == "__main__":
+    uvicorn.run(
+        "app:app",
+        host="0.0.0.0",
+        port=PORT,
+        reload=True,
+        log_level="info",
+    )
